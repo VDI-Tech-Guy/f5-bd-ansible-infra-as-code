@@ -1,0 +1,93 @@
+---
+- name: Find latest F5 BIG-IP VE AMI
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    region: us-east-2
+    bigip_version: "17.1.1"          # target version (major.minor.patch)
+    license_type: "PAYG"             # or "BYOL"
+    instance_type: "m5.xlarge"
+
+  tasks:
+    - name: Get list of official F5 BIG-IP AMIs
+      amazon.aws.ec2_ami_info:
+        region: "{{ region }}"
+        owners: ["679593333241"]
+        filters:
+          name: "BIGIP*{{ bigip_version }}*{{ license_type }}*"
+      register: f5_amis
+
+    - name: Sort AMIs by CreationDate (latest first)
+      set_fact:
+        latest_ami: "{{ f5_amis.images | sort(attribute='creation_date', reverse=True) | first }}"
+
+    - name: Show latest BIG-IP AMI info
+      debug:
+        msg:
+          - "Region: {{ region }}"
+          - "Version: {{ bigip_version }}"
+          - "License Type: {{ license_type }}"
+          - "Latest AMI Name: {{ latest_ami.name }}"
+          - "AMI ID: {{ latest_ami.image_id }}"
+          - "Creation Date: {{ latest_ami.creation_date }}"
+          - "Instance Type: {{ instance_type }}"
+
+
+
+
+# # #Deploy OVA
+# # - hosts: localhost
+# #   connection: local
+# #   gather_facts: no
+# #   vars:
+# #     bip_version: "17.5"
+# #     bip_build: "latest"
+# #     bip_speed: "25M"
+# #     region: 
+# #     instance_type: "c5.xlarge"
+
+# #   tasks:
+
+# #   - name: gather information about F5 BIG-IP AMIs published by F5 ()
+# #     amazon.aws.ec2_ami_info:
+# #       owners: 099720109477
+# #       filters:
+# #         name: "ubuntu/images/ubuntu-zesty-17.04-*"
+
+# ---
+# - name: Find AWS Marketplace AMI
+#   hosts: localhost
+#   connection: local
+#   gather_facts: no
+#   vars:
+#     # Example: Search for a specific product code or publisher
+#     # You might need to adjust these filters based on the image you're looking for
+#     marketplace_product_code: "example-product-code" # Replace with actual product code
+#     marketplace_owner_id: "aws-marketplace" # Often used for Marketplace images
+#     bip_version: "17.5"
+#     bip_build: "latest"
+#     bip_speed: "25M"
+#     region: 
+#     instance_type: "c5.xlarge"
+
+#   tasks:
+#     - name: Gather information about Marketplace AMIs
+#       amazon.aws.ec2_ami_info:
+#         region: us-east-1 # Specify your desired AWS region
+#         filters:
+#           # product-code: "{{ marketplace_product_code }}"
+#           name: "ubuntu/images/ubuntu-zesty-17.04-*"
+#           owner-id: "{{ marketplace_owner_id }}"
+#       register: marketplace_amis
+
+#     - name: Display found Marketplace AMIs
+#       debug:
+#         var: marketplace_amis.images
+#       when: marketplace_amis.images is defined and marketplace_amis.images | length > 0
+
+#     - name: No Marketplace AMIs found
+#       debug:
+#         msg: "No Marketplace AMIs found with the specified filters."
+#       when: marketplace_amis.images is not defined or marketplace_amis.images | length == 0
