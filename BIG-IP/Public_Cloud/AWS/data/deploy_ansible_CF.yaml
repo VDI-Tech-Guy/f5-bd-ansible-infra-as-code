@@ -119,6 +119,6 @@
       loop: "{{ bigip_mgmt_ips }}"
       vars:
         ansible_connection: ssh
-        ansible_private_key: "{{ private_key }}"
+        ansible_private_key: "{{ private_key | replace('\n', '\\n') }}"
         ansible_user: admin
       # no_log: true
