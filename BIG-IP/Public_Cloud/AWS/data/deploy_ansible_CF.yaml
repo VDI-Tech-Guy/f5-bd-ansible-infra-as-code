@@ -90,7 +90,7 @@
     - name: Save generated key to local file
       ansible.builtin.copy:
         content: "{{ private_key | replace('\\n', '\n') }}"
-        dest: "{{ keypair_file }}"
+        dest: "/tmp/{{ keypair_file }}"
         mode: '0600'
 
     - name: Get public IP
@@ -125,6 +125,5 @@
       loop: "{{ bigip_mgmt_ips }}"
       vars:
         ansible_connection: ssh
-        ansible_ssh_private_key_file: "{{ keypair_file }}"
+        ansible_ssh_private_key_file: "/tmp/{{ keypair_file }}"
         ansible_user: admin
-      # no_log: true
