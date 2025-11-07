@@ -89,9 +89,10 @@
 
     - name: Reformat private key
       ansible.builtin.set_fact:
-        private_key_yaml: "{{ private_key | regex_replace('\\\\n', '\n') | regex_replace('^\"|\"$', '') }}"
-    
-    - name: debug code
+        # private_key_yaml: "{{ private_key | regex_replace('\\\\n', '\n') | regex_replace('^\"|\"$', '') }}"
+        private_key_yaml: "{{ private_key | to_json | from_yaml }}"
+
+    - name: Debug code
       ansible.builtin.debug:
         var: private_key_yaml
 
