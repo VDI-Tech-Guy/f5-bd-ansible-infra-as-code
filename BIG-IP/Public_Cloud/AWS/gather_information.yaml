@@ -36,7 +36,7 @@
           - "Latest AMI Name: {{ latest_ami.name }}"
           - "AMI ID: {{ latest_ami.image_id }}"
           - "Creation Date: {{ latest_ami.creation_date }}"
-          - "Instance Type: {{ instance_type }}"
+          # - "Instance Type: {{ instance_type }}"
 
 
 
