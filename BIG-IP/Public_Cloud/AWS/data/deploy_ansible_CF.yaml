@@ -125,6 +125,6 @@
       loop: "{{ bigip_mgmt_ips }}"
       vars:
         ansible_connection: ssh
-        ansible_private_key_file: "{{ keypair_file }}"
+        ansible_private_key_file: "{{ lookup('file', keypair_file) }}"
         ansible_user: admin
       # no_log: true
