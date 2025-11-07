@@ -122,12 +122,31 @@
         state: started
       loop: "{{ bigip_mgmt_ips }}"
 
-    - name: Reset BIG-IP admin password
-      ansible.builtin.shell: |
-        bash -lc "/usr/bin/tmsh modify auth user admin password {{ bigip_password }}"
-      delegate_to: "{{ item }}"
-      loop: "{{ bigip_mgmt_ips }}"
-      vars:
-        ansible_connection: ssh
-        ansible_ssh_private_key: "{{ private_key_pem }}"
-        ansible_user: admin
+    - name: Set Provider var
+      ansible.builtin.set_fact:
+        provider:
+          transport: cli
+          server: 10.10.10.177
+          user: admin
+          ssh_keyfile: "{{ private_key_pem }}"
+          validate_certs: false
+          no_f5_teem: true
+      delegate_to: "{{ bigip_mgmt_ips }}"
+
+    - name: Run single command - provider-cli
+      f5networks.f5_modules.bigip_command:
+        commands:
+          - "tmsh show sys version"
+        provider: "{{ provider }}"
+      register: result
+      delegate_to: "{{ bigip_mgmt_ips }}"
+
+    # - name: Reset BIG-IP admin password
+    #   ansible.builtin.shell: |
+    #     bash -lc "/usr/bin/tmsh modify auth user admin password {{ bigip_password }}"
+    #   delegate_to: "{{ item }}"
+    #   loop: "{{ bigip_mgmt_ips }}"
+    #   vars:
+    #     ansible_connection: ssh
+    #     ansible_ssh_private_key: "{{ private_key_pem }}"
+    #     ansible_user: admin
