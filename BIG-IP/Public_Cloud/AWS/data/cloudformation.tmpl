@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description: >
-  Deploy an HA pair of F5 BIG-IP VE PAYG instances across two AZs in us-east-2
+  Deploy an HA pair of F5 BIG-IP VE PAYG instances across two AZs in us-east-1
   using 3-NIC architecture (management, external, internal).
 
 Parameters:
@@ -42,8 +42,8 @@ Parameters:
 
 Mappings:
   RegionMap:
-    us-east-2:
-      AZs: ["us-east-2a", "us-east-2b"]
+    us-east-1:
+      AZs: ["us-east-1a", "us-east-1b"]
 
 Resources:
   VPC:
@@ -70,7 +70,7 @@ Resources:
     Properties:
       VpcId: !Ref VPC
       CidrBlock: !Ref MgmtSubnetCidrAz1
-      AvailabilityZone: !Select [0, !FindInMap [RegionMap, us-east-2, AZs]]
+      AvailabilityZone: !Select [0, !FindInMap [RegionMap, us-east-1, AZs]]
       MapPublicIpOnLaunch: true
       Tags: [{ Key: Name, Value: bigip-mgmt-az1 }]
   MgmtSubnetAz2:
@@ -78,7 +78,7 @@ Resources:
     Properties:
       VpcId: !Ref VPC
       CidrBlock: !Ref MgmtSubnetCidrAz2
-      AvailabilityZone: !Select [1, !FindInMap [RegionMap, us-east-2, AZs]]
+      AvailabilityZone: !Select [1, !FindInMap [RegionMap, us-east-1, AZs]]
       MapPublicIpOnLaunch: true
       Tags: [{ Key: Name, Value: bigip-mgmt-az2 }]
 
@@ -88,7 +88,7 @@ Resources:
     Properties:
       VpcId: !Ref VPC
       CidrBlock: !Ref ExternalSubnetCidrAz1
-      AvailabilityZone: !Select [0, !FindInMap [RegionMap, us-east-2, AZs]]
+      AvailabilityZone: !Select [0, !FindInMap [RegionMap, us-east-1, AZs]]
       MapPublicIpOnLaunch: true
       Tags: [{ Key: Name, Value: bigip-external-az1 }]
   ExternalSubnetAz2:
@@ -96,7 +96,7 @@ Resources:
     Properties:
       VpcId: !Ref VPC
       CidrBlock: !Ref ExternalSubnetCidrAz2
-      AvailabilityZone: !Select [1, !FindInMap [RegionMap, us-east-2, AZs]]
+      AvailabilityZone: !Select [1, !FindInMap [RegionMap, us-east-1, AZs]]
       MapPublicIpOnLaunch: true
       Tags: [{ Key: Name, Value: bigip-external-az2 }]
 
@@ -106,7 +106,7 @@ Resources:
     Properties:
       VpcId: !Ref VPC
       CidrBlock: !Ref InternalSubnetCidrAz1
-      AvailabilityZone: !Select [0, !FindInMap [RegionMap, us-east-2, AZs]]
+      AvailabilityZone: !Select [0, !FindInMap [RegionMap, us-east-1, AZs]]
       MapPublicIpOnLaunch: false
       Tags: [{ Key: Name, Value: bigip-internal-az1 }]
   InternalSubnetAz2:
@@ -114,7 +114,7 @@ Resources:
     Properties:
       VpcId: !Ref VPC
       CidrBlock: !Ref InternalSubnetCidrAz2
-      AvailabilityZone: !Select [1, !FindInMap [RegionMap, us-east-2, AZs]]
+      AvailabilityZone: !Select [1, !FindInMap [RegionMap, us-east-1, AZs]]
       MapPublicIpOnLaunch: false
       Tags: [{ Key: Name, Value: bigip-internal-az2 }]
 
@@ -160,11 +160,11 @@ Resources:
         - IpProtocol: tcp
           FromPort: 22
           ToPort: 22
-          CidrIp: 0.0.0.0/0
+          CidrIp: 98.38.94.225/32
         - IpProtocol: tcp
           FromPort: 443
           ToPort: 443
-          CidrIp: 0.0.0.0/0
+          CidrIp: 98.38.94.225/32
       SecurityGroupEgress:
         - IpProtocol: -1
           FromPort: 0
