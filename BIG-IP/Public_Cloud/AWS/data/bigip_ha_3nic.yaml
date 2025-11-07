@@ -46,6 +46,7 @@ Mappings:
       AZs: ["us-east-1a", "us-east-1b"]
 
 Resources:
+  # --- VPC and Internet Gateway ---
   VPC:
     Type: AWS::EC2::VPC
     Properties:
@@ -58,31 +59,33 @@ Resources:
     Type: AWS::EC2::InternetGateway
     Properties:
       Tags: [{ Key: Name, Value: bigip-igw }]
+
   AttachIGW:
     Type: AWS::EC2::VPCGatewayAttachment
     Properties:
       InternetGatewayId: !Ref IGW
       VpcId: !Ref VPC
 
-  # --- Management subnets ---
+  # --- Management Subnets ---
   MgmtSubnetAz1:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
       CidrBlock: !Ref MgmtSubnetCidrAz1
       AvailabilityZone: !Select [0, !FindInMap [RegionMap, us-east-1, AZs]]
-      MapPublicIpOnLaunch: true
+      MapPublicIpOnLaunch: false
       Tags: [{ Key: Name, Value: bigip-mgmt-az1 }]
+
   MgmtSubnetAz2:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC
       CidrBlock: !Ref MgmtSubnetCidrAz2
       AvailabilityZone: !Select [1, !FindInMap [RegionMap, us-east-1, AZs]]
-      MapPublicIpOnLaunch: true
+      MapPublicIpOnLaunch: false
       Tags: [{ Key: Name, Value: bigip-mgmt-az2 }]
 
-  # --- External subnets ---
+  # --- External Subnets ---
   ExternalSubnetAz1:
     Type: AWS::EC2::Subnet
     Properties:
@@ -91,6 +94,7 @@ Resources:
       AvailabilityZone: !Select [0, !FindInMap [RegionMap, us-east-1, AZs]]
       MapPublicIpOnLaunch: true
       Tags: [{ Key: Name, Value: bigip-external-az1 }]
+
   ExternalSubnetAz2:
     Type: AWS::EC2::Subnet
     Properties:
@@ -100,7 +104,7 @@ Resources:
       MapPublicIpOnLaunch: true
       Tags: [{ Key: Name, Value: bigip-external-az2 }]
 
-  # --- Internal subnets ---
+  # --- Internal Subnets ---
   InternalSubnetAz1:
     Type: AWS::EC2::Subnet
     Properties:
@@ -109,6 +113,7 @@ Resources:
       AvailabilityZone: !Select [0, !FindInMap [RegionMap, us-east-1, AZs]]
       MapPublicIpOnLaunch: false
       Tags: [{ Key: Name, Value: bigip-internal-az1 }]
+
   InternalSubnetAz2:
     Type: AWS::EC2::Subnet
     Properties:
@@ -118,39 +123,45 @@ Resources:
       MapPublicIpOnLaunch: false
       Tags: [{ Key: Name, Value: bigip-internal-az2 }]
 
-  # --- Routing & Security Groups ---
+  # --- Routing ---
   PublicRouteTable:
     Type: AWS::EC2::RouteTable
     Properties:
       VpcId: !Ref VPC
       Tags: [{ Key: Name, Value: public-rt }]
+
   DefaultRoute:
     Type: AWS::EC2::Route
     Properties:
       RouteTableId: !Ref PublicRouteTable
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref IGW
+
   AssocMgmtAz1:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref MgmtSubnetAz1
       RouteTableId: !Ref PublicRouteTable
+
   AssocMgmtAz2:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref MgmtSubnetAz2
       RouteTableId: !Ref PublicRouteTable
+
   AssocExternalAz1:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref ExternalSubnetAz1
       RouteTableId: !Ref PublicRouteTable
+
   AssocExternalAz2:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
       SubnetId: !Ref ExternalSubnetAz2
       RouteTableId: !Ref PublicRouteTable
 
+  # --- Security Group ---
   BigIpSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -172,6 +183,43 @@ Resources:
           CidrIp: 0.0.0.0/0
       Tags: [{ Key: Name, Value: bigip-sg }]
 
+  # --- Management ENIs + EIPs ---
+  BigIpAz1MgmtENI:
+    Type: AWS::EC2::NetworkInterface
+    Properties:
+      SubnetId: !Ref MgmtSubnetAz1
+      GroupSet: [!Ref BigIpSecurityGroup]
+      Tags: [{ Key: Name, Value: bigip-az1-mgmt }]
+
+  BigIpAz1EIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  BigIpAz1EIPAssoc:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId: !GetAtt BigIpAz1EIP.AllocationId
+      NetworkInterfaceId: !Ref BigIpAz1MgmtENI
+
+  BigIpAz2MgmtENI:
+    Type: AWS::EC2::NetworkInterface
+    Properties:
+      SubnetId: !Ref MgmtSubnetAz2
+      GroupSet: [!Ref BigIpSecurityGroup]
+      Tags: [{ Key: Name, Value: bigip-az2-mgmt }]
+
+  BigIpAz2EIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  BigIpAz2EIPAssoc:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId: !GetAtt BigIpAz2EIP.AllocationId
+      NetworkInterfaceId: !Ref BigIpAz2MgmtENI
+
   # --- BIG-IP Instances ---
   BigIpAz1:
     Type: AWS::EC2::Instance
@@ -181,14 +229,13 @@ Resources:
       KeyName: !Ref KeyName
       NetworkInterfaces:
         - DeviceIndex: 0
-          SubnetId: !Ref MgmtSubnetAz1
-          AssociatePublicIpAddress: true
-          GroupSet: [!Ref BigIpSecurityGroup]
+          NetworkInterfaceId: !Ref BigIpAz1MgmtENI
         - DeviceIndex: 1
           SubnetId: !Ref ExternalSubnetAz1
         - DeviceIndex: 2
           SubnetId: !Ref InternalSubnetAz1
       Tags: [{ Key: Name, Value: bigip-az1 }]
+
   BigIpAz2:
     Type: AWS::EC2::Instance
     Properties:
@@ -197,9 +244,7 @@ Resources:
       KeyName: !Ref KeyName
       NetworkInterfaces:
         - DeviceIndex: 0
-          SubnetId: !Ref MgmtSubnetAz2
-          AssociatePublicIpAddress: true
-          GroupSet: [!Ref BigIpSecurityGroup]
+          NetworkInterfaceId: !Ref BigIpAz2MgmtENI
         - DeviceIndex: 1
           SubnetId: !Ref ExternalSubnetAz2
         - DeviceIndex: 2
@@ -207,17 +252,22 @@ Resources:
       Tags: [{ Key: Name, Value: bigip-az2 }]
 
 Outputs:
-  BigIpAz1MgmtIP:
-    Value: !GetAtt BigIpAz1.PublicIp
-    Description: Management public IP for BIG-IP in AZ1
-  BigIpAz2MgmtIP:
-    Value: !GetAtt BigIpAz2.PublicIp
-    Description: Management public IP for BIG-IP in AZ2
+  BigIpAz1MgmtEIP:
+    Description: Public Elastic IP for BIG-IP AZ1 management
+    Value: !Ref BigIpAz1EIP
+
+  BigIpAz2MgmtEIP:
+    Description: Public Elastic IP for BIG-IP AZ2 management
+    Value: !Ref BigIpAz2EIP
+
   VpcId:
     Value: !Ref VPC
+
   MgmtSubnetIds:
     Value: !Join [",", [!Ref MgmtSubnetAz1, !Ref MgmtSubnetAz2]]
+
   ExternalSubnetIds:
     Value: !Join [",", [!Ref ExternalSubnetAz1, !Ref ExternalSubnetAz2]]
+
   InternalSubnetIds:
     Value: !Join [",", [!Ref InternalSubnetAz1, !Ref InternalSubnetAz2]]
