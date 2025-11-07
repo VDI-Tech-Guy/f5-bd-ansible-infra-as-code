@@ -71,9 +71,9 @@
         region: "{{ region }}"
         stack_name: "{{ stack_name }}"
       register: stack_info
-      until: stack_info.stacks[0].stack_status in ['CREATE_COMPLETE', 'UPDATE_COMPLETE']
-      retries: 30
-      delay: 60
+      # until: stack_info.stacks[0].stack_status in ['CREATE_COMPLETE', 'UPDATE_COMPLETE']
+      # retries: 30
+      # delay: 60
 
     - name: Show Management IPs
       ansible.builtin.debug:
