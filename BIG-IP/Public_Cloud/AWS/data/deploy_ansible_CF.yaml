@@ -89,7 +89,7 @@
 
     - name: Save generated key to local file
       ansible.builtin.copy:
-        content: "{{ new_key.key.private_key }}"
+        content: "{{ private_key }}"
         dest: "{{ keypair_file }}"
         mode: '0600'
 
