@@ -75,8 +75,8 @@
       retries: 30
       delay: 60
 
-- name: Show BIG-IP Management IPs
-  ansible.builtin.debug:
-    msg:
-      - "AZ1 BIG-IP Management IP: {{ stack_info.cloudformation[stack_name].stack_outputs.BigIpAz1MgmtEIP }}"
-      - "AZ2 BIG-IP Management IP: {{ stack_info.cloudformation[stack_name].stack_outputs.BigIpAz2MgmtEIP }}"
+    - name: Show BIG-IP Management IPs
+      ansible.builtin.debug:
+        msg:
+          - "AZ1 BIG-IP Management IP: {{ stack_info.cloudformation[stack_name].stack_outputs.BigIpAz1MgmtEIP }}"
+          - "AZ2 BIG-IP Management IP: {{ stack_info.cloudformation[stack_name].stack_outputs.BigIpAz2MgmtEIP }}"
