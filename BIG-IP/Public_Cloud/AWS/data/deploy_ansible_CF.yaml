@@ -118,6 +118,7 @@
       delegate_to: "{{ item }}"
       loop: "{{ bigip_mgmt_ips }}"
       vars:
+        ansible_connection: ssh
         ansible_ssh_private_key_file: "{{ private_key }}"
         ansible_user: admin
       # no_log: true
