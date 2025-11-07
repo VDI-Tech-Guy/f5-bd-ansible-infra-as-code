@@ -87,6 +87,12 @@
     #       - "{{ stack_info.cloudformation[stack_name].stack_outputs.BigIpAz1MgmtEIP }}"
     #       - "{{ stack_info.cloudformation[stack_name].stack_outputs.BigIpAz2MgmtEIP }}"
 
+    - name: Save generated key to local file
+      ansible.builtin.copy:
+        content: "{{ new_key.key.private_key }}"
+        dest: "{{ keypair_file }}"
+        mode: '0600'
+
     - name: Reformat private key
       ansible.builtin.set_fact:
         private_key_yaml: "{{ private_key.split('\n') | join('\n') }}"
@@ -142,5 +148,5 @@
       loop: "{{ bigip_mgmt_ips }}"
       vars:
         ansible_connection: ssh
-        ansible_ssh_private_key: "{{ private_key_pem }}"
+        ansible_ssh_private_key_file: "{{ keypair_file }}"
         ansible_user: admin
