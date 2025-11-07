@@ -90,7 +90,7 @@
     - name: Get public IP
       ansible.builtin.uri:
         url: https://api.ipify.org
-        return_content: yes
+        return_content: true
       register: public_ip
 
     - name: Show public IP
@@ -114,10 +114,10 @@
 
     - name: Reset BIG-IP admin password
       ansible.builtin.shell: |
-        tmsh modify auth user admin password {{ bigip_password }}
+        bash -lc "/usr/bin/tmsh modify auth user admin password {{ bigip_password }}"
       delegate_to: "{{ item }}"
       loop: "{{ bigip_mgmt_ips }}"
       vars:
-        ansible_ssh_private_key_file: "{{ private_key }}" 
-        ansible_user: root
+        ansible_ssh_private_key_file: "{{ private_key }}"
+        ansible_user: admin
       # no_log: true
