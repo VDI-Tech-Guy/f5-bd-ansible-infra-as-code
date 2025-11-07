@@ -80,3 +80,38 @@
         msg:
           - "AZ1 BIG-IP Management IP: {{ stack_info.cloudformation[stack_name].stack_outputs.BigIpAz1MgmtEIP }}"
           - "AZ2 BIG-IP Management IP: {{ stack_info.cloudformation[stack_name].stack_outputs.BigIpAz2MgmtEIP }}"
+
+    - name: Wait for EC2 instances to be running
+      amazon.aws.ec2_instance_info:
+        filters:
+          "tag:Name": "bigip-az*"
+        region: "{{ region }}"
+      register: ec2_instances
+      until: ec2_instances.instances | selectattr('state.name', 'equalto', 'running') | list | length == 2
+      retries: 30
+      delay: 20
+
+    - name: Gather BIG-IP instance info
+      amazon.aws.ec2_instance_info:
+        filters:
+          "tag:Name": "bigip-az*"
+        region: "{{ region }}"
+      register: ec2_instances
+
+    - name: Wait for SSH connectivity to BIG-IP instances
+      ansible.builtin.wait_for:
+        host: "{{ item.public_ip_address }}"
+        port: 22
+        delay: 10
+        timeout: 600
+        state: started
+      loop: "{{ ec2_instances.instances }}"
+
+    - name: Reset BIG-IP admin password
+      ansible.builtin.shell: |
+        tmsh modify auth user admin password {{ bigip_password }}
+      delegate_to: "{{ item.public_ip_address }}"
+      loop: "{{ ec2_instances.instances }}"
+      vars:
+        ansible_ssh_private_key_file: "{{ new_key.key.private_key }}"
+        ansible_user: admin   # default BIG-IP admin user
