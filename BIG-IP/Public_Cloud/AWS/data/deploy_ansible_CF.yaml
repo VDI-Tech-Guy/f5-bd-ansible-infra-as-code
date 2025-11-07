@@ -9,7 +9,7 @@
     region: us-east-1
     template_file: bigip_ha_3nic.yaml
     keypair_name: mmabis-bigipKeyPair
-    keypair_file: bigipKeyPair.pem
+    keypair_file: ./bigipKeyPair.pem
     # bigip_ami: ami-xxxxxxxxxxxx  # Replace with PAYG AMI ID from AWS Marketplace
 
   tasks:
@@ -92,7 +92,7 @@
         content: "{{ private_key }}"
         dest: "{{ keypair_file }}"
         mode: '0600'
-
+      
     - name: Get public IP
       ansible.builtin.uri:
         url: https://api.ipify.org
@@ -118,6 +118,10 @@
         state: started
       loop: "{{ bigip_mgmt_ips }}"
 
+    - name: Debug Private Key
+      ansible.builtin.debug:
+        msg: "{{ private_key | replace('\n', '\\n') }}"
+
     - name: Reset BIG-IP admin password
       ansible.builtin.shell: |
         bash -lc "/usr/bin/tmsh modify auth user admin password {{ bigip_password }}"
@@ -125,6 +129,6 @@
       loop: "{{ bigip_mgmt_ips }}"
       vars:
         ansible_connection: ssh
-        ansible_private_key_file: "{{ lookup('file', keypair_file) }}"
+        ansible_private_key_file: "{{ private_key | replace('\n', '\\n') }}"
         ansible_user: admin
       # no_log: true
