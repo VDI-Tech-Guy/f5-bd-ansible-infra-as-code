@@ -87,6 +87,16 @@
     #       - "{{ stack_info.cloudformation[stack_name].stack_outputs.BigIpAz1MgmtEIP }}"
     #       - "{{ stack_info.cloudformation[stack_name].stack_outputs.BigIpAz2MgmtEIP }}"
 
+    - name: Get public IP
+      ansible.builtin.uri:
+        url: https://api.ipify.org
+        return_content: yes
+      register: public_ip
+
+    - name: Show public IP
+      ansible.builtin.debug:
+        msg: "My public IP is {{ public_ip.content }}"
+
     - name: Gather BIG-IP Management IPs
       ansible.builtin.set_fact:
         bigip_mgmt_ips:
