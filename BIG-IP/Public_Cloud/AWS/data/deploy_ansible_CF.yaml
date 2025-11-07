@@ -118,10 +118,6 @@
         state: started
       loop: "{{ bigip_mgmt_ips }}"
 
-    - name: Debug Private Key
-      ansible.builtin.debug:
-        msg: "{{ private_key | replace('\n', '\\n') }}"
-
     - name: Reset BIG-IP admin password
       ansible.builtin.shell: |
         bash -lc "/usr/bin/tmsh modify auth user admin password {{ bigip_password }}"
@@ -129,6 +125,6 @@
       loop: "{{ bigip_mgmt_ips }}"
       vars:
         ansible_connection: ssh
-        ansible_private_key_file: "{{ private_key | replace('\n', '\\n') }}"
+        ansible_private_key_file: "{{ private_key | replace('\\n', '\n') }}"
         ansible_user: admin
       # no_log: true
