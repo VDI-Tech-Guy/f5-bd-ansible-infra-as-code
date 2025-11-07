@@ -2,7 +2,7 @@
 - name: Find latest F5 BIG-IP VE AMI
   hosts: localhost
   connection: local
-  gather_facts: false
+  gather_facts: true
 
   vars:
     region: us-east-2
