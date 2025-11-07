@@ -5,7 +5,7 @@
   gather_facts: false
 
   vars:
-    stack_name: bigip-ha-demo
+    stack_name: mmabis-bigip-ha-demo
     region: us-east-1
     template_file: bigip_ha_3nic.yaml
     keypair_name: bigipKeyPair
