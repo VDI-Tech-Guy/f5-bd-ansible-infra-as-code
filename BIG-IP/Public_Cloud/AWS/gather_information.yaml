@@ -6,7 +6,7 @@
 
   vars:
     region: us-east-1
-    bigip_version: "17.5.1.3"          # target version (major.minor.patch)
+    bigip_version: "21"          # target version (major.minor.patch)
     bigip_features: "Best"       # Good Better Best
     bigip_bandwidth: "25M"       # 25M 1G 3G 5G 10G
     license_type: "PAYG"         # "PAYG" or "BYOL"
