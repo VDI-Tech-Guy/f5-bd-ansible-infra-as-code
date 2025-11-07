@@ -90,7 +90,7 @@
     - name: Save generated key to local file
       ansible.builtin.copy:
         content: "{{ private_key }}"
-        dest: "{{ keypair_file }}"
+        dest: "/tmp/{{ keypair_file }}"
         mode: '0600'
 
     - name: Reformat private key
@@ -136,7 +136,7 @@
           transport: cli
           server: "{{ item }}"
           user: admin
-          ssh_keyfile: "{{ keypair_file }}"
+          ssh_keyfile: "/tmp/{{ keypair_file }}"
           validate_certs: false
           no_f5_teem: true
       loop: "{{ bigip_mgmt_ips }}"
