@@ -5,7 +5,7 @@
   gather_facts: true
 
   vars:
-    region: us-east-2
+    region: us-east-1
     bigip_version: "17.1.1"          # target version (major.minor.patch)
     license_type: "PAYG"             # or "BYOL"
     instance_type: "m5.xlarge"
@@ -16,7 +16,7 @@
         # aws_access_key: "{{ AWS_ACCESS_KEY_ID }}"
         # aws_secret_key: "{{ AWS_SECRET_ACCESS_KEY }}"
         region: "{{ region }}"
-        #owners: ["679593333241"]
+        # owners: ["679593333241"]
         filters:
           name: "BIGIP*{{ bigip_version }}*{{ license_type }}*"
       register: f5_amis
