@@ -1,0 +1,44 @@
+---
+# playbooks/04_onboard.yml
+# Waits for both nodes to be reachable, then runs Declarative Onboarding.
+# IMPORTANT: primary must complete DO before secondary — device trust
+# in the DO declaration requires the primary to already be onboarded.
+
+- name: Wait for both BIG-IP nodes to be ready
+  hosts: ocp_automation
+  gather_facts: false
+
+  tasks:
+    - name: Wait for primary management interface
+      ansible.builtin.include_role:
+        name: f5_wait_mgmt
+      vars:
+        node_name: "{{ f5_primary_node }}"
+
+    - name: Wait for secondary management interface
+      ansible.builtin.include_role:
+        name: f5_wait_mgmt
+      vars:
+        node_name: "{{ f5_secondary_node }}"
+
+- name: Onboard primary node first
+  hosts: ocp_automation
+  gather_facts: false
+
+  tasks:
+    - name: Run Declarative Onboarding on primary
+      ansible.builtin.include_role:
+        name: f5_declarative_onboarding
+      vars:
+        node_name: "{{ f5_primary_node }}"
+
+- name: Onboard secondary node after primary completes
+  hosts: ocp_automation
+  gather_facts: false
+
+  tasks:
+    - name: Run Declarative Onboarding on secondary
+      ansible.builtin.include_role:
+        name: f5_declarative_onboarding
+      vars:
+        node_name: "{{ f5_secondary_node }}"

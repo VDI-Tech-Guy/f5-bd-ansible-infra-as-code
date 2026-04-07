@@ -1,0 +1,40 @@
+{# templates/cloudinit_userdata.j2 #}
+{# Rendered per-node — hostvars[node_name] provides per-node vars #}
+#cloud-config
+tmos_declared:
+  enabled: true
+  iControlEndpoints:
+    - 'https://localhost/mgmt'
+
+  declaration:
+    schemaVersion: "1.0.0"
+    class: Device
+
+    Common:
+      class: Tenant
+
+      mySystem:
+        class: System
+        hostname: "{{ hostvars[node_name].f5_hostname }}"
+        cliInactivityTimeout: 1200
+        consoleInactivityTimeout: 1200
+
+      myDns:
+        class: DNS
+        nameServers: {{ f5_dns_servers | to_json }}
+        search: {{ f5_dns_search | to_json }}
+
+      myNtp:
+        class: NTP
+        servers: {{ f5_ntp_servers | to_json }}
+        timezone: "{{ f5_timezone }}"
+
+      myProvisioning:
+        class: Provision
+        ltm: nominal
+
+chpasswd:
+  list: |
+    root:{{ f5_root_password }}
+    admin:{{ f5_admin_password }}
+  expire: False
