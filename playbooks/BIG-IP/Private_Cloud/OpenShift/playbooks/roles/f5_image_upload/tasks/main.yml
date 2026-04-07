@@ -65,7 +65,7 @@
   when: not virtctl_stat.stat.exists
 
 - name: Verify virtctl works
-  ansible.builtin.command: virtctl version --client
+  ansible.builtin.command: /usr/local/bin/virtctl version --client
   delegate_to: bastion01
   register: virtctl_ver_check
   changed_when: false
@@ -250,7 +250,7 @@
 
     - name: Upload QCOW2 via virtctl image-upload
       ansible.builtin.shell: >
-        virtctl image-upload dv {{ f5_datavolume_name }}
+        /usr/local/bin/virtctl image-upload dv {{ f5_datavolume_name }}
         --namespace {{ ocp_namespace }}
         --image-path {{ cifs_mountpoint }}/{{ qcow2_filename }}
         --uploadproxy-url {{ cdi_upload_proxy }}
