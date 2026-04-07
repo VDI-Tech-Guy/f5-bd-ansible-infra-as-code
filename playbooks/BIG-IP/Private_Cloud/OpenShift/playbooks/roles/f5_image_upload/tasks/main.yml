@@ -215,6 +215,12 @@
     # temp file so virtctl can authenticate. Deleted immediately after.
     # ------------------------------------------------------------------
 
+    - name: Get current timestamp for temp file naming
+      ansible.builtin.setup:
+        gather_subset:
+          - date_time
+      delegate_to: localhost
+
     - name: Set temp kubeconfig path
       ansible.builtin.set_fact:
         tmp_kubeconfig: "/tmp/.virtctl-kubeconfig-{{ ansible_date_time.epoch }}"
