@@ -43,11 +43,11 @@
         name: system:openshift:scc:privileged
         apiGroup: rbac.authorization.k8s.io
 
-- name: Create NetworkAttachmentDefinition for each data-plane VLAN
+- name: Create NetworkAttachmentDefinition for each VLAN
   kubernetes.core.k8s:
     state: present
     definition: "{{ lookup('template', 'multus_nad.j2') | from_yaml }}"
-  loop: "{{ f5_networks | rejectattr('name', 'equalto', 'mgmt') | list }}"
+  loop: "{{ f5_networks }}"
   loop_control:
     loop_var: nad_item
     label: "{{ nad_item.name }} VLAN {{ nad_item.vlan_id }}"
