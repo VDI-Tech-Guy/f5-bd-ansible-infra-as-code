@@ -9,7 +9,7 @@
 #   delete_namespace: true      → removes the entire namespace at the end
 
 - name: Teardown F5 BIG-IP deployment
-  hosts: ocp_automation
+  hosts: localhost
   gather_facts: false
 
   tasks:
