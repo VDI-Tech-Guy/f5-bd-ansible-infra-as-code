@@ -4,6 +4,9 @@
 # In AAP, create a Job Template pointing at this playbook.
 # Individual playbooks can also be run standalone for re-runs / debugging.
 
+- name: Phase 0 — OCP infrastructure
+  ansible.builtin.import_playbook: 00_ocp_infra.yml
+
 - name: Phase 1 — OpenShift prerequisites
   ansible.builtin.import_playbook: 01_ocp_prereqs.yml
 

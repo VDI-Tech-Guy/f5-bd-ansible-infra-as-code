@@ -1,0 +1,26 @@
+apiVersion: nmstate.io/v1
+kind: NodeNetworkConfigurationPolicy
+metadata:
+  name: f5-vlan-bridges
+spec:
+  nodeSelector:
+    node-role.kubernetes.io/worker: ""
+  desiredState:
+    interfaces:
+{% for vlan in f5_vlans %}
+      - name: "{{ nmstate_nic }}.{{ vlan.id }}"
+        type: vlan
+        state: up
+        vlan:
+          base-iface: "{{ nmstate_nic }}"
+          id: {{ vlan.id }}
+      - name: "{{ vlan.bridge }}"
+        type: linux-bridge
+        state: up
+        bridge:
+          options:
+            stp:
+              enabled: false
+          port:
+            - name: "{{ nmstate_nic }}.{{ vlan.id }}"
+{% endfor %}

@@ -334,6 +334,114 @@
         - ns_check.resources | length > 0
 
     # ------------------------------------------------------------------
+    # Node network — NNCP and bridges
+    # ------------------------------------------------------------------
+
+    - name: Check if NNCP exists
+      kubernetes.core.k8s_info:
+        api_version: nmstate.io/v1
+        kind: NodeNetworkConfigurationPolicy
+        name: f5-vlan-bridges
+      register: nncp_check
+      when: delete_node_network | default(false) | bool
+
+    - name: Delete NNCP
+      kubernetes.core.k8s:
+        state: absent
+        api_version: nmstate.io/v1
+        kind: NodeNetworkConfigurationPolicy
+        name: f5-vlan-bridges
+      when:
+        - delete_node_network | default(false) | bool
+        - nncp_check.resources | length > 0
+
+    - name: Wait for NNCP deletion to propagate
+      kubernetes.core.k8s_info:
+        api_version: nmstate.io/v1
+        kind: NodeNetworkConfigurationPolicy
+        name: f5-vlan-bridges
+      register: nncp_gone
+      until: nncp_gone.resources | length == 0
+      retries: 20
+      delay: 15
+      when:
+        - delete_node_network | default(false) | bool
+        - nncp_check.resources | length > 0
+
+    - name: Report NNCP status
+      ansible.builtin.debug:
+        msg: "NNCP: {{ 'deleted' if (delete_node_network | default(false) | bool) and nncp_check.resources | length > 0 else 'retained (delete_node_network=false)' }}"
+
+    # ------------------------------------------------------------------
+    # NMState operator
+    # ------------------------------------------------------------------
+
+    - name: NMState teardown block
+      when: delete_nmstate | default(false) | bool
+      block:
+
+        - name: Check if NMState instance exists
+          kubernetes.core.k8s_info:
+            api_version: nmstate.io/v1
+            kind: NMState
+            name: nmstate
+          register: nmstate_instance_check
+
+        - name: Delete NMState instance
+          kubernetes.core.k8s:
+            state: absent
+            api_version: nmstate.io/v1
+            kind: NMState
+            name: nmstate
+          when: nmstate_instance_check.resources | length > 0
+
+        - name: Wait for handler pods to terminate
+          kubernetes.core.k8s_info:
+            api_version: v1
+            kind: Pod
+            namespace: openshift-nmstate
+            label_selectors:
+              - component=kubernetes-nmstate-handler
+          register: handler_pods
+          until: handler_pods.resources | length == 0
+          retries: 20
+          delay: 15
+          when: nmstate_instance_check.resources | length > 0
+
+        - name: Delete NMState Subscription
+          kubernetes.core.k8s:
+            state: absent
+            api_version: operators.coreos.com/v1alpha1
+            kind: Subscription
+            name: kubernetes-nmstate-operator
+            namespace: openshift-nmstate
+
+        - name: Get NMState CSV
+          kubernetes.core.k8s_info:
+            api_version: operators.coreos.com/v1alpha1
+            kind: ClusterServiceVersion
+            namespace: openshift-nmstate
+          register: nmstate_csv_check
+
+        - name: Delete NMState CSV
+          kubernetes.core.k8s:
+            state: absent
+            api_version: operators.coreos.com/v1alpha1
+            kind: ClusterServiceVersion
+            name: "{{ item.metadata.name }}"
+            namespace: openshift-nmstate
+          loop: "{{ nmstate_csv_check.resources | selectattr('metadata.name', 'search', 'kubernetes-nmstate') | list }}"
+          loop_control:
+            label: "{{ item.metadata.name }}"
+
+        - name: Delete NMState namespace
+          kubernetes.core.k8s:
+            state: absent
+            api_version: v1
+            kind: Namespace
+            name: openshift-nmstate
+
+    # ------------------------------------------------------------------
     # Final summary
     # ------------------------------------------------------------------
 
@@ -347,4 +455,6 @@
           - "Node DVs removed:     {{ dv_primary_check.resources | length > 0 or dv_secondary_check.resources | length > 0 }}"
           - "Source image removed: {{ delete_source_image | default(false) | bool }}"
           - "Namespace removed:    {{ delete_namespace | default(false) | bool }}"
+          - "NNCP/bridges:     {{ 'removed' if (delete_node_network | default(false) | bool) else 'retained' }}"
+          - "NMState operator: {{ 'removed' if (delete_nmstate | default(false) | bool) else 'retained' }}"
           - "================================================"
