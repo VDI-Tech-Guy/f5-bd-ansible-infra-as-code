@@ -1,12 +1,12 @@
 ---
 - name: Phase 0a — Install NMState operator
-  hosts: ocp_automation
+  hosts: localhost
   gather_facts: false
   roles:
     - role: ocp_nmstate_operator
 
 - name: Phase 0b — Configure node networking (VLAN bridges)
-  hosts: ocp_automation
+  hosts: localhost
   gather_facts: false
   roles:
     - role: ocp_node_network
