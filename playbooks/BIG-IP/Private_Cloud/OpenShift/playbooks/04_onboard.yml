@@ -5,7 +5,7 @@
 # in the DO declaration requires the primary to already be onboarded.
 
 - name: Wait for both BIG-IP nodes to be ready
-  hosts: ocp_automation
+  hosts: localhost
   gather_facts: false
 
   tasks:
@@ -22,7 +22,7 @@
         node_name: "{{ f5_secondary_node }}"
 
 - name: Onboard primary node first
-  hosts: ocp_automation
+  hosts: localhost
   gather_facts: false
 
   tasks:
@@ -33,7 +33,7 @@
         node_name: "{{ f5_primary_node }}"
 
 - name: Onboard secondary node after primary completes
-  hosts: ocp_automation
+  hosts: localhost
   gather_facts: false
 
   tasks:

@@ -5,7 +5,7 @@
 # places them on separate OCP worker nodes.
 
 - name: Deploy F5 BIG-IP VirtualMachines
-  hosts: ocp_automation
+  hosts: localhost
   gather_facts: false
 
   tasks:
