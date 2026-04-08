@@ -24,7 +24,8 @@ cifs_mountpoint: "/mnt/f5images"
 cifs_username: "{{ vault_cifs_username }}"
 cifs_password: "{{ vault_cifs_password }}"
 cifs_domain: "YOURDOMAIN"
-qcow2_filename: "BIGIP-17.1.1-0.0.4.qcow2"   # update to your image filename
+qcow2_filename: "BIGIP-17.5.1.5-0.0.6.qcow2"   # update to your image filename
+virtctl_arch: "x86_64"
 
 # ============================================================
 # CDI / DataVolume
@@ -49,22 +50,29 @@ f5_vm_memory: "16Gi"
 # NIC 3 = ha      (Multus / VLAN 3012)
 
 f5_networks:
-  - name: mgmt
-    vlan_id: 3014
-    nad_name: "f5-mgmt"
-    bigip_iface: "mgmt"
   - name: internal
     vlan_id: 3010
     nad_name: "f5-internal"
+    bridge: "ovs-bridge"
     bigip_iface: "1.1"
   - name: external
     vlan_id: 3011
     nad_name: "f5-external"
+    bridge: "ovs-bridge"
     bigip_iface: "1.2"
   - name: ha
     vlan_id: 3012
     nad_name: "f5-ha"
+    bridge: "ovs-bridge"
     bigip_iface: "1.3"
+  - name: mgmt
+    vlan_id: 3014
+    nad_name: "f5-mgmt"
+    bridge: "ovs-bridge"
+    bigip_iface: "mgmt"
+
+# nmstate nic utilized in cluster to create networking
+nmstate_nic: "ens1f1"
 
 # Floating (shared) IPs — only on internal and external
 f5_float_internal: "10.30.10.10/24"
@@ -90,10 +98,10 @@ f5_timezone: "America/New_York"
 # ============================================================
 # F5 credentials and licensing
 # ============================================================
-f5_admin_password: "{{ vault_f5_admin_password }}"
-f5_root_password: "{{ vault_f5_root_password }}"
-f5_license_key_node1: "{{ vault_f5_license_key_node1 }}"
-f5_license_key_node2: "{{ vault_f5_license_key_node2 }}"
+f5_admin_password: "{{ lookup('env', 'ANSIBLE_NET_PASSWORD') }}"
+f5_root_password: "{{ lookup('env', 'ANSIBLE_NET_PASSWORD') }}"
+f5_license_key_node1: "XXXXX-XXXXX-XXXXX-XXXXX-XXXXXXX"
+f5_license_key_node2: "XXXXX-XXXXX-XXXXX-XXXXX-XXXXXXX"
 
 # ============================================================
 # Declarative Onboarding
