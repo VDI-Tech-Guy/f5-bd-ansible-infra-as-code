@@ -72,4 +72,4 @@
 
 - name: Confirm all worker bridges are ready
   ansible.builtin.debug:
-    msg: "All {{ worker_count }} worker nodes have bridges for VLANs: {{ f5_networks | map(attribute='id') | list }}"
+    msg: "All {{ worker_count }} worker nodes have bridges for VLANs: {{ f5_networks | map(attribute='vlan_id') | list }}"
