@@ -37,10 +37,9 @@
   delay: 30
   failed_when: clone_status.resources[0].status.phase | default('') == 'Failed'
 
-- name: Render cloud-init user-data and network-config for this node
+- name: Render cloud-init user-data for this node
   ansible.builtin.set_fact:
     cloudinit_userdata: "{{ lookup('template', 'cloudinit_userdata.j2') }}"
-    cloudinit_networkconfig: "{{ lookup('template', 'cloudinit_networkconfig.j2') }}"
 
 - name: Create cloud-init secret for this node
   kubernetes.core.k8s:
@@ -54,8 +53,7 @@
       type: Opaque
       stringData:
         userdata: "{{ cloudinit_userdata }}"
-        networkdata: "{{ cloudinit_networkconfig }}"
-  no_log: true    # contains passwords from vault
+  no_log: true
 
 - name: Deploy VirtualMachine CR for this node
   kubernetes.core.k8s:
