@@ -1,4 +1,4 @@
-## Last Updated 11/01/2025
+# Last Updated 11/01/2025
 namespace: f5networks
 name: f5_infra_as_code_deployments
 version: 1.0.0
@@ -19,18 +19,13 @@ dependencies:
   ansible.utils: '*'
   ansible.posix: '*'
   ansible.netcommon: '*'
-  ansible.controller: '*'
-  ansible.platform: '*'
   amazon.aws: '*'
-  amazon.cloud: '*'
   awx.awx: '*'
   azure.azcollection: '*'
   cloud.terraform: '*'
   community.aws: '*'
-  community.azure: '*'
   community.docker: '*'
   community.general: '*'
-  community.kubernetes: '*'
   community.proxmox: '*'
   community.vmware: '*'
   containers.podman: '*'
