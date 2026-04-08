@@ -8,11 +8,11 @@ spec:
   desiredState:
     ovn:
       bridge-mappings:
-      {% for vlan in f5_networks %}
+      {%- for vlan in f5_networks %}
       - localnet: "{{ vlan.nad_name }}"
         bridge: ovs-vms
         state: present
-      {% endfor %}
+      {%- endfor %}
     interfaces:
     - name: ovs-vms
       type: ovs-bridge

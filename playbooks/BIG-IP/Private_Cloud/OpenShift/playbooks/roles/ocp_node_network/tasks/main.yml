@@ -15,7 +15,7 @@
   kubernetes.core.k8s_info:
     api_version: nmstate.io/v1
     kind: NodeNetworkConfigurationPolicy
-    name: f5-vlan-bridges
+    name: ovs-vms
   register: nncp_check
 
 - name: Check current NNCP condition
@@ -39,7 +39,7 @@
   kubernetes.core.k8s_info:
     api_version: nmstate.io/v1
     kind: NodeNetworkConfigurationPolicy
-    name: f5-vlan-bridges
+    name: ovs-vms
   register: nncp_status
   until: >
     nncp_status.resources | length > 0 and
@@ -56,13 +56,13 @@
     api_version: nmstate.io/v1
     kind: NodeNetworkConfigurationEnactment
     label_selectors:
-      - nmstate.io/policy=f5-vlan-bridges
+      - nmstate.io/policy=ovs-vms
   register: nnce_status
 
 - name: Report per-node bridge status
   ansible.builtin.debug:
     msg: >
-      Node {{ item.metadata.name | regex_replace('\.f5-vlan-bridges', '') }}:
+      Node {{ item.metadata.name | regex_replace('\.ovs-vms', '') }}:
       {{ item.status.conditions |
          selectattr('type', 'equalto', 'Available') |
          map(attribute='status') | first | default('Unknown') }}
@@ -72,4 +72,4 @@
 
 - name: Confirm all worker bridges are ready
   ansible.builtin.debug:
-    msg: "All {{ worker_count }} worker nodes have bridges for VLANs: {{ f5_vlans | map(attribute='id') | list }}"
+    msg: "All {{ worker_count }} worker nodes have bridges for VLANs: {{ f5_networks | map(attribute='id') | list }}"
