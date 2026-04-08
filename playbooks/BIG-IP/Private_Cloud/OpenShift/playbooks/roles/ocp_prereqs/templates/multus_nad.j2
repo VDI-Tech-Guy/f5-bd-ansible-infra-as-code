@@ -10,8 +10,9 @@ spec:
     {
       "cniVersion": "0.3.1",
       "name": "{{ nad_item.nad_name }}",
-      "type": "bridge",
-      "bridge": "{{ nad_item.bridge }}",
-      "vlan": {{ nad_item.vlan_id }},
+      "type": "ovn-k8s-cni-overlay",
+      "topology": "localnet",
+      "netAttachDefName": "{{ ocp_namespace }}/{{ nad_item.nad_name }}",
+      "vlanID": {{ nad_item.vlan_id }},
       "ipam": {}
     }
