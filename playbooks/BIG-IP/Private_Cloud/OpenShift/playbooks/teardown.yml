@@ -222,7 +222,7 @@
         name: "{{ nad_item.nad_name }}"
         namespace: "{{ ocp_namespace }}"
       register: nad_check
-      loop: "{{ f5_networks | rejectattr('name', 'equalto', 'mgmt') | list }}"
+      loop: "{{ f5_networks }}"
       loop_control:
         loop_var: nad_item
         label: "{{ nad_item.name }}"

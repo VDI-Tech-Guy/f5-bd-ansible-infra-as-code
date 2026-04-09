@@ -29,10 +29,6 @@
          list | length > 0)
       }}
 
-- name: Debug rendered NNCP template
-  ansible.builtin.debug:
-    msg: "{{ lookup('template', 'nncp.j2') }}"
-    
 - name: Apply NodeNetworkConfigurationPolicy
   kubernetes.core.k8s:
     state: present

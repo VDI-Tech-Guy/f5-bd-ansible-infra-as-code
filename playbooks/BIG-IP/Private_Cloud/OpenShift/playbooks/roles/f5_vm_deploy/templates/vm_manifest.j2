@@ -9,7 +9,7 @@ metadata:
     app: f5-bigip
     role: "{{ 'primary' if node_name == f5_primary_node else 'secondary' }}"
 spec:
-  running: true
+  runStrategy: Always
   template:
     metadata:
       labels:
@@ -41,13 +41,13 @@ spec:
                 bus: virtio
           interfaces:
             - name: mgmt
-              bridge: {}
+              binding: {}
             - name: internal
-              bridge: {}
+              binding: {}
             - name: external
-              bridge: {}
+              binding: {}
             - name: ha
-              bridge: {}
+              binding: {}
 
       networks:
         - name: mgmt
