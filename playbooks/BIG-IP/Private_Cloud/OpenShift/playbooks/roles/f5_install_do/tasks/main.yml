@@ -41,6 +41,21 @@
     # Install RPM via f5networks.f5_modules.bigip_lx_package
     # ------------------------------------------------------------------
 
+    - name: Wait for iApps LX framework to be ready
+      ansible.builtin.uri:
+        url: "https://{{ hostvars[node_name].f5_mgmt_ip }}/mgmt/shared/iapp/package-management-tasks"
+        method: GET
+        user: admin
+        password: "{{ f5_admin_password }}"
+        validate_certs: false
+        status_code: [200]
+      register: iapps_ready
+      until: iapps_ready.status == 200
+      retries: 20
+      delay: 30
+      delegate_to: localhost
+      no_log: true
+
     - name: Set BIG-IP provider facts
       ansible.builtin.set_fact:
         bigip_provider:
@@ -50,6 +65,7 @@
           server_port: 443
           no_f5_teem: true
           validate_certs: false
+      no_log: true
 
     - name: Install DO RPM on BIG-IP
       f5networks.f5_modules.bigip_lx_package:
