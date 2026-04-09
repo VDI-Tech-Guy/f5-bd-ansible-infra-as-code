@@ -18,6 +18,7 @@
 - name: Set DO install needed fact
   ansible.builtin.set_fact:
     do_install_needed: "{{ do_check.status == 404 }}"
+    do_install_success: false
 
 - name: DO install block
   when:
@@ -79,9 +80,13 @@
       ansible.builtin.debug:
         msg: "DO successfully installed on {{ node_name }} ({{ hostvars[node_name].f5_mgmt_ip }})"
 
+    - name: Set DO install success flag
+      ansible.builtin.set_fact:
+        do_install_success: true
+
   always:
     # ------------------------------------------------------------------
-    # Clean up RPM from bastion cache after install
+    # Clean up RPM from bastion cache only on success
     # ------------------------------------------------------------------
 
     - name: Clean up DO RPM from bastion cache
@@ -90,4 +95,6 @@
         state: absent
       delegate_to: bastion01
       become: true
-      when: do_rpm_install_from_cifs | default(false) | bool
+      when:
+        - do_rpm_install_from_cifs | default(false) | bool
+        - do_install_success | default(false) | bool
