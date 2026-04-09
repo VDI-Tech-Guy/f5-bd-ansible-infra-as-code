@@ -9,11 +9,24 @@
   "Common": {
     "class": "Tenant",
 
+{% if f5_license_type == 'regkey' %}
     "myLicense": {
       "class": "License",
       "licenseType": "regKey",
       "regKey": "{{ f5_license_key_node1 if node_name == f5_primary_node else f5_license_key_node2 }}"
     },
+{% elif f5_license_type == 'bigiq' %}
+    "myLicense": {
+      "class": "License",
+      "licenseType": "licensePool",
+      "bigIqHost": "{{ bigiq_host }}",
+      "bigIqUsername": "{{ bigiq_username }}",
+      "bigIqPassword": "{{ bigiq_password }}",
+      "licensePool": "{{ bigiq_pool }}",
+      "reachable": false,
+      "hypervisor": "kvm"
+    },
+{% endif %}
 
     "myDns": {
       "class": "DNS",

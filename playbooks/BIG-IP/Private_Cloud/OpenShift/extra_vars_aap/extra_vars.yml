@@ -95,12 +95,27 @@ f5_ntp_servers:
 f5_timezone: "America/New_York"
 
 # ============================================================
-# F5 credentials and licensing
+# F5 credentials
 # ============================================================
 f5_admin_password: "{{ lookup('env', 'ANSIBLE_NET_PASSWORD') }}"
 f5_root_password: "{{ lookup('env', 'ANSIBLE_NET_PASSWORD') }}"
+
+# ============================================================
+# F5 licensing
+# ============================================================
+
+# variable answer can be regkey bigiq
+f5_license_type: regkey
+
+# regKey licensing
 f5_license_key_node1: "XXXXX-XXXXX-XXXXX-XXXXX-XXXXXXX"
 f5_license_key_node2: "XXXXX-XXXXX-XXXXX-XXXXX-XXXXXXX"
+
+# bigiq licensing
+bigiq_host: "192.168.1.100"
+bigiq_username: "{{ biq_username }}"
+bigiq_password: "{{ biq_password }}"
+bigiq_pool: "biq_pool_name"
 
 # ============================================================
 # Declarative Onboarding
