@@ -49,26 +49,24 @@ f5_vm_memory: "16Gi"
 # NIC 2 = external (Multus / VLAN 3011)
 # NIC 3 = ha      (Multus / VLAN 3012)
 
+ovs_bridge_name: ovs-vms
+
 f5_networks:
   - name: internal
     vlan_id: 3010
     nad_name: "f5-internal"
-    bridge: "ovs-bridge"
     bigip_iface: "1.1"
   - name: external
     vlan_id: 3011
     nad_name: "f5-external"
-    bridge: "ovs-bridge"
     bigip_iface: "1.2"
   - name: ha
     vlan_id: 3012
     nad_name: "f5-ha"
-    bridge: "ovs-bridge"
     bigip_iface: "1.3"
   - name: mgmt
     vlan_id: 3014
     nad_name: "f5-mgmt"
-    bridge: "ovs-bridge"
     bigip_iface: "mgmt"
 
 # nmstate nic utilized in cluster to create networking
