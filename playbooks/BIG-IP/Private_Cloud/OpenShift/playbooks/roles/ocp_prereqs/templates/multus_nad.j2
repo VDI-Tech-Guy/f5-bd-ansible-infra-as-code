@@ -14,5 +14,6 @@ spec:
       "topology": "localnet",
       "netAttachDefName": "{{ ocp_namespace }}/{{ nad_item.nad_name }}",
       "vlanID": {{ nad_item.vlan_id }},
+      "mtu": 1500,
       "ipam": {}
     }
