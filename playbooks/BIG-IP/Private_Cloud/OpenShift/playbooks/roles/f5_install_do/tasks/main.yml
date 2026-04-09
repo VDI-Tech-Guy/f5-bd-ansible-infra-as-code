@@ -11,7 +11,7 @@
     user: admin
     password: "{{ f5_admin_password }}"
     validate_certs: false
-    status_code: [200, 404, 422]
+    status_code: [200, 404, 422, 500]
   register: do_check
   delegate_to: localhost
 
