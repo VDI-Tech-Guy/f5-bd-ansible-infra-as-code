@@ -70,7 +70,7 @@ f5_networks:
 # nmstate nic utilized in cluster to create networking
 nmstate_nic: "ens1f1"
 
-# bnstate bridge name used in cluster for the networking
+# nstate bridge name used in cluster for the networking
 nmstate_bridge_name: ovs-vms
 
 # Floating (shared) IPs — only on internal and external
