@@ -189,10 +189,10 @@
               upload: {}
             storage:
               accessModes:
-                - ReadWriteOnce
+                - "{{ f5_storage_access_mode | default('ReadWriteOnce') }}"
               resources:
                 requests:
-                  storage: "{{ f5_source_disk_size }}"  # ← changed from f5_disk_size
+                  storage: "{{ f5_disk_size }}"
               storageClassName: "{{ f5_storage_class }}"
 
     - name: Wait for DataVolume to be ready for upload

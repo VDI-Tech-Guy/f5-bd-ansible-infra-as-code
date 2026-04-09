@@ -30,10 +30,10 @@ virtctl_arch: "x86_64"
 # ============================================================
 # CDI / DataVolume
 # ============================================================
-f5_datavolume_name: "f5-bigip-disk"   # storageclass
-f5_datavolume_name_size: "10Gi"       # source upload size
-f5_disk_size: "120Gi"                 # destination size
-f5_storage_class: "thin-csi"          # update to your RWO block storageclass
+f5_datavolume_name: "f5-bigip-disk"           # name of disk
+f5_disk_size: "120Gi"                         # destination size
+f5_storage_class: "thin-csi"                  # update to your RWO block storageclass
+f5_storage_access_mode: "ReadWriteMany"       # enables live migration (if not defined will default to ReadWriteOnce - No Live Migration)
 
 # ============================================================
 # VM compute spec

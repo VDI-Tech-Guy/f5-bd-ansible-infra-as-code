@@ -19,7 +19,7 @@
             name: "{{ f5_datavolume_name }}"
         storage:
           accessModes:
-            - ReadWriteOnce
+            - "{{ f5_storage_access_mode | default('ReadWriteOnce') }}"
           resources:
             requests:
               storage: "{{ f5_disk_size }}"
