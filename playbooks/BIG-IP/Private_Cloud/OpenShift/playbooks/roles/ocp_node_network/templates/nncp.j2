@@ -1,7 +1,7 @@
 apiVersion: nmstate.io/v1
 kind: NodeNetworkConfigurationPolicy
 metadata:
-  name: "{{ ovs_bridge_name }}"
+  name: "{{ nmstate_bridge_name }}"
 spec:
   nodeSelector:
     node-role.kubernetes.io/worker: ''
@@ -10,11 +10,11 @@ spec:
       bridge-mappings:
 {% for vlan in f5_networks %}
       - localnet: "{{ vlan.nad_name }}"
-        bridge: "{{ ovs_bridge_name }}"
+        bridge: "{{ nmstate_bridge_name }}"
         state: present
 {% endfor %}
     interfaces:
-    - name: "{{ ovs_bridge_name }}"
+    - name: "{{ nmstate_bridge_name }}"
       type: ovs-bridge
       state: up
       bridge:

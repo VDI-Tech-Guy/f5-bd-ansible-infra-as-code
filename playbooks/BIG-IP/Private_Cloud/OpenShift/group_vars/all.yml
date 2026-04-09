@@ -49,8 +49,6 @@ f5_vm_memory: "16Gi"
 # NIC 2 = external (Multus / VLAN 3011)
 # NIC 3 = ha      (Multus / VLAN 3012)
 
-ovs_bridge_name: ovs-vms
-
 f5_networks:
   - name: internal
     vlan_id: 3010
@@ -71,6 +69,9 @@ f5_networks:
 
 # nmstate nic utilized in cluster to create networking
 nmstate_nic: "ens1f1"
+
+# bnstate bridge name used in cluster for the networking
+nmstate_bridge_name: ovs-vms
 
 # Floating (shared) IPs — only on internal and external
 f5_float_internal: "10.30.10.10/24"
