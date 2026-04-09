@@ -16,5 +16,5 @@
 - name: Phase 3 — Deploy VirtualMachines
   ansible.builtin.import_playbook: 03_deploy_vm.yml
 
-# - name: Phase 4 — Declarative Onboarding
-#   ansible.builtin.import_playbook: 04_onboard.yml
+- name: Phase 4 — Declarative Onboarding
+  ansible.builtin.import_playbook: 04_onboard.yml
