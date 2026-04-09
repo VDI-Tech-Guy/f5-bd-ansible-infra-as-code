@@ -1,41 +1,7 @@
 ---
 # Role: f5_vm_deploy
-# Auth: kubernetes.core.k8s reads K8S_AUTH_* env vars from AAP credential.
-# Clones DataVolume per node, creates cloud-init secret, deploys VM CR.
-
-- name: Clone DataVolume for this node
-  kubernetes.core.k8s:
-    state: present
-    definition:
-      apiVersion: cdi.kubevirt.io/v1beta1
-      kind: DataVolume
-      metadata:
-        name: "{{ f5_datavolume_name }}-{{ node_name }}"
-        namespace: "{{ ocp_namespace }}"
-      spec:
-        source:
-          pvc:
-            namespace: "{{ ocp_namespace }}"
-            name: "{{ f5_datavolume_name }}"
-        storage:
-          accessModes:
-            - "{{ f5_storage_access_mode | default('ReadWriteOnce') }}"
-          resources:
-            requests:
-              storage: "{{ f5_disk_size }}"
-          storageClassName: "{{ f5_storage_class }}"
-
-- name: Wait for cloned DataVolume to succeed
-  kubernetes.core.k8s_info:
-    api_version: cdi.kubevirt.io/v1beta1
-    kind: DataVolume
-    name: "{{ f5_datavolume_name }}-{{ node_name }}"
-    namespace: "{{ ocp_namespace }}"
-  register: clone_status
-  until: clone_status.resources[0].status.phase | default('') == 'Succeeded'
-  retries: 60
-  delay: 30
-  failed_when: clone_status.resources[0].status.phase | default('') == 'Failed'
+# DVs are pre-uploaded by f5_image_upload role.
+# This role only creates cloud-init secret and deploys the VM CR.
 
 - name: Render cloud-init user-data for this node
   ansible.builtin.set_fact:
@@ -71,3 +37,4 @@
   retries: 40
   delay: 30
   failed_when: vmi_status.resources[0].status.phase | default('') == 'Failed'
+  

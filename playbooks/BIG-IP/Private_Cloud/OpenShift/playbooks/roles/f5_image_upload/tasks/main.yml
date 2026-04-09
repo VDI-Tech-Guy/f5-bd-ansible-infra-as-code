@@ -1,13 +1,15 @@
 ---
-
 # Role: f5_image_upload
 # Auth for k8s tasks: K8S_AUTH_* env vars from AAP credential (no kubeconfig).
 # Auth for virtctl on bastion: temp kubeconfig written at runtime from the
 # same K8S_AUTH_* env vars, used once, then deleted.
-# Idempotent: skips upload if DataVolume already exists and is Succeeded.
+# Idempotent: skips upload for any DataVolume that already exists and is Succeeded.
+# Uploads directly to per-node DataVolumes in parallel — no source DV or clone needed.
 
+# ------------------------------------------------------------------
+# Bastion prerequisites — virtctl
+# ------------------------------------------------------------------
 
-# PreTasks
 - name: Get virtctl download URL from OCP cluster
   kubernetes.core.k8s_info:
     api_version: console.openshift.io/v1
@@ -74,22 +76,39 @@
   ansible.builtin.debug:
     msg: "{{ virtctl_ver_check.stdout }}"
 
-# Post
+# ------------------------------------------------------------------
+# Check which node DVs need uploading
+# ------------------------------------------------------------------
 
-- name: Check if DataVolume already exists and succeeded
+- name: Check if node DataVolumes already exist and succeeded
   kubernetes.core.k8s_info:
     api_version: cdi.kubevirt.io/v1beta1
     kind: DataVolume
-    name: "{{ f5_datavolume_name }}"
+    name: "{{ f5_datavolume_name }}-{{ item }}"
     namespace: "{{ ocp_namespace }}"
   register: dv_check
+  loop:
+    - "{{ f5_primary_node }}"
+    - "{{ f5_secondary_node }}"
 
-- name: Set upload_needed fact
+- name: Set upload needed facts per node
   ansible.builtin.set_fact:
+    upload_needed_primary: >-
+      {{
+        dv_check.results[0].resources | length == 0 or
+        (dv_check.results[0].resources[0].status.phase | default('')) != 'Succeeded'
+      }}
+    upload_needed_secondary: >-
+      {{
+        dv_check.results[1].resources | length == 0 or
+        (dv_check.results[1].resources[0].status.phase | default('')) != 'Succeeded'
+      }}
     upload_needed: >-
       {{
-        dv_check.resources | length == 0 or
-        (dv_check.resources[0].status.phase | default('')) != 'Succeeded'
+        dv_check.results[0].resources | length == 0 or
+        (dv_check.results[0].resources[0].status.phase | default('')) != 'Succeeded' or
+        dv_check.results[1].resources | length == 0 or
+        (dv_check.results[1].resources[0].status.phase | default('')) != 'Succeeded'
       }}
 
 - name: Image upload block
@@ -155,7 +174,7 @@
       failed_when: not qcow2_stat.stat.exists
 
     # ------------------------------------------------------------------
-    # Get CDI upload proxy URL (uses K8S_AUTH_* env vars automatically)
+    # Get CDI upload proxy URL
     # ------------------------------------------------------------------
 
     - name: Get CDI upload proxy URL
@@ -170,17 +189,17 @@
         cdi_upload_proxy: "{{ cdi_config.resources[0].status.uploadProxyURL }}"
 
     # ------------------------------------------------------------------
-    # Create DataVolume upload target (uses K8S_AUTH_* env vars)
+    # Create DataVolume upload targets for each node
     # ------------------------------------------------------------------
 
-    - name: Create DataVolume upload target
+    - name: Create DataVolume upload target for primary
       kubernetes.core.k8s:
         state: present
         definition:
           apiVersion: cdi.kubevirt.io/v1beta1
           kind: DataVolume
           metadata:
-            name: "{{ f5_datavolume_name }}"
+            name: "{{ f5_datavolume_name }}-{{ f5_primary_node }}"
             namespace: "{{ ocp_namespace }}"
             annotations:
               cdi.kubevirt.io/storage.upload.target: ""
@@ -194,18 +213,56 @@
                 requests:
                   storage: "{{ f5_disk_size }}"
               storageClassName: "{{ f5_storage_class }}"
+      when: upload_needed_primary
 
-    - name: Wait for DataVolume to be ready for upload
+    - name: Create DataVolume upload target for secondary
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: cdi.kubevirt.io/v1beta1
+          kind: DataVolume
+          metadata:
+            name: "{{ f5_datavolume_name }}-{{ f5_secondary_node }}"
+            namespace: "{{ ocp_namespace }}"
+            annotations:
+              cdi.kubevirt.io/storage.upload.target: ""
+          spec:
+            source:
+              upload: {}
+            storage:
+              accessModes:
+                - "{{ f5_storage_access_mode | default('ReadWriteOnce') }}"
+              resources:
+                requests:
+                  storage: "{{ f5_disk_size }}"
+              storageClassName: "{{ f5_storage_class }}"
+      when: upload_needed_secondary
+
+    - name: Wait for primary DataVolume to be ready for upload
       kubernetes.core.k8s_info:
         api_version: cdi.kubevirt.io/v1beta1
         kind: DataVolume
-        name: "{{ f5_datavolume_name }}"
+        name: "{{ f5_datavolume_name }}-{{ f5_primary_node }}"
         namespace: "{{ ocp_namespace }}"
-      register: dv_upload_ready
+      register: dv_primary_ready
       until: >
-        dv_upload_ready.resources[0].status.phase | default('') in ['UploadReady', 'WaitForFirstConsumer']
+        dv_primary_ready.resources[0].status.phase | default('') in ['UploadReady', 'WaitForFirstConsumer']
       retries: 20
       delay: 10
+      when: upload_needed_primary
+
+    - name: Wait for secondary DataVolume to be ready for upload
+      kubernetes.core.k8s_info:
+        api_version: cdi.kubevirt.io/v1beta1
+        kind: DataVolume
+        name: "{{ f5_datavolume_name }}-{{ f5_secondary_node }}"
+        namespace: "{{ ocp_namespace }}"
+      register: dv_secondary_ready
+      until: >
+        dv_secondary_ready.resources[0].status.phase | default('') in ['UploadReady', 'WaitForFirstConsumer']
+      retries: 20
+      delay: 10
+      when: upload_needed_secondary
 
     # ------------------------------------------------------------------
     # Build temp kubeconfig on bastion from AAP-injected env vars.
@@ -251,12 +308,12 @@
       no_log: true
 
     # ------------------------------------------------------------------
-    # virtctl upload — delegated to bastion, temp kubeconfig auth
+    # Parallel uploads via async
     # ------------------------------------------------------------------
 
-    - name: Upload QCOW2 via virtctl image-upload
+    - name: Upload QCOW2 to primary DV async
       ansible.builtin.shell: >
-        /usr/local/bin/virtctl image-upload dv {{ f5_datavolume_name }}
+        /usr/local/bin/virtctl image-upload dv {{ f5_datavolume_name }}-{{ f5_primary_node }}
         --namespace {{ ocp_namespace }}
         --image-path {{ cifs_mountpoint }}/{{ qcow2_filename }}
         --uploadproxy-url {{ cdi_upload_proxy }}
@@ -264,8 +321,45 @@
         --insecure
         --wait-secs=600
       delegate_to: bastion01
-      register: upload_result
-      changed_when: upload_result.rc == 0
+      async: 3600
+      poll: 0
+      register: upload_primary_job
+      when: upload_needed_primary
+
+    - name: Upload QCOW2 to secondary DV async
+      ansible.builtin.shell: >
+        /usr/local/bin/virtctl image-upload dv {{ f5_datavolume_name }}-{{ f5_secondary_node }}
+        --namespace {{ ocp_namespace }}
+        --image-path {{ cifs_mountpoint }}/{{ qcow2_filename }}
+        --uploadproxy-url {{ cdi_upload_proxy }}
+        --kubeconfig {{ tmp_kubeconfig }}
+        --insecure
+        --wait-secs=600
+      delegate_to: bastion01
+      async: 3600
+      poll: 0
+      register: upload_secondary_job
+      when: upload_needed_secondary
+
+    - name: Wait for primary upload to complete
+      ansible.builtin.async_status:
+        jid: "{{ upload_primary_job.ansible_job_id }}"
+      register: upload_primary_result
+      until: upload_primary_result.finished
+      retries: 120
+      delay: 30
+      delegate_to: bastion01
+      when: upload_needed_primary
+
+    - name: Wait for secondary upload to complete
+      ansible.builtin.async_status:
+        jid: "{{ upload_secondary_job.ansible_job_id }}"
+      register: upload_secondary_result
+      until: upload_secondary_result.finished
+      retries: 120
+      delay: 30
+      delegate_to: bastion01
+      when: upload_needed_secondary
 
   always:
     # ------------------------------------------------------------------
@@ -286,14 +380,36 @@
       become: true
       delegate_to: bastion01
 
-- name: Wait for DataVolume to reach Succeeded phase
+# ------------------------------------------------------------------
+# Wait for both DVs to reach Succeeded
+# ------------------------------------------------------------------
+
+- name: Wait for primary DataVolume to reach Succeeded
   kubernetes.core.k8s_info:
     api_version: cdi.kubevirt.io/v1beta1
     kind: DataVolume
-    name: "{{ f5_datavolume_name }}"
+    name: "{{ f5_datavolume_name }}-{{ f5_primary_node }}"
     namespace: "{{ ocp_namespace }}"
-  register: dv_status
-  until: dv_status.resources[0].status.phase | default('') == 'Succeeded'
+  register: dv_primary_status
+  until: dv_primary_status.resources[0].status.phase | default('') == 'Succeeded'
   retries: 60
   delay: 30
-  failed_when: dv_status.resources[0].status.phase | default('') == 'Failed'
+  failed_when: dv_primary_status.resources[0].status.phase | default('') == 'Failed'
+
+- name: Wait for secondary DataVolume to reach Succeeded
+  kubernetes.core.k8s_info:
+    api_version: cdi.kubevirt.io/v1beta1
+    kind: DataVolume
+    name: "{{ f5_datavolume_name }}-{{ f5_secondary_node }}"
+    namespace: "{{ ocp_namespace }}"
+  register: dv_secondary_status
+  until: dv_secondary_status.resources[0].status.phase | default('') == 'Succeeded'
+  retries: 60
+  delay: 30
+  failed_when: dv_secondary_status.resources[0].status.phase | default('') == 'Failed'
+
+- name: Report upload status
+  ansible.builtin.debug:
+    msg:
+      - "{{ f5_datavolume_name }}-{{ f5_primary_node }}: {{ dv_primary_status.resources[0].status.phase }}"
+      - "{{ f5_datavolume_name }}-{{ f5_secondary_node }}: {{ dv_secondary_status.resources[0].status.phase }}"

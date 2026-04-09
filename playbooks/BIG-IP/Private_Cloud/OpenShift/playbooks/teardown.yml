@@ -4,9 +4,11 @@
 # Safe to run at any stage — checks existence before every delete
 # so it skips gracefully if a resource was never created.
 #
-# Safety flags (both default false — must be explicitly set):
-#   delete_source_image: true   → also removes the base QCOW2 DataVolume
+# Safety flags (all default false — must be explicitly set):
+#   delete_disk_images: true    → removes per-node DataVolumes (uploaded disk images)
 #   delete_namespace: true      → removes the entire namespace at the end
+#   delete_node_network: true   → removes the NNCP/OVS bridge config
+#   delete_nmstate: true        → removes the NMState operator entirely
 
 - name: Teardown F5 BIG-IP deployment
   hosts: localhost
@@ -129,86 +131,60 @@
           secondary={{ 'deleted' if secret_secondary_check.resources | length > 0 else 'not found - skipped' }}
 
     # ------------------------------------------------------------------
-    # Per-node cloned DataVolumes
+    # Per-node DataVolumes (uploaded disk images)
+    # Only removed if delete_disk_images: true — defaults to false
+    # so you can redeploy without re-uploading the images.
     # ------------------------------------------------------------------
 
-    - name: Check if primary cloned DataVolume exists
+    - name: Check if primary DataVolume exists
       kubernetes.core.k8s_info:
         api_version: cdi.kubevirt.io/v1beta1
         kind: DataVolume
         name: "{{ f5_datavolume_name }}-{{ f5_primary_node }}"
         namespace: "{{ ocp_namespace }}"
       register: dv_primary_check
+      when: delete_disk_images | default(false) | bool
 
-    - name: Delete primary cloned DataVolume
+    - name: Delete primary DataVolume
       kubernetes.core.k8s:
         state: absent
         api_version: cdi.kubevirt.io/v1beta1
         kind: DataVolume
         name: "{{ f5_datavolume_name }}-{{ f5_primary_node }}"
         namespace: "{{ ocp_namespace }}"
-      when: dv_primary_check.resources | length > 0
+      when:
+        - delete_disk_images | default(false) | bool
+        - dv_primary_check.resources | length > 0
 
-    - name: Check if secondary cloned DataVolume exists
+    - name: Check if secondary DataVolume exists
       kubernetes.core.k8s_info:
         api_version: cdi.kubevirt.io/v1beta1
         kind: DataVolume
         name: "{{ f5_datavolume_name }}-{{ f5_secondary_node }}"
         namespace: "{{ ocp_namespace }}"
       register: dv_secondary_check
+      when: delete_disk_images | default(false) | bool
 
-    - name: Delete secondary cloned DataVolume
+    - name: Delete secondary DataVolume
       kubernetes.core.k8s:
         state: absent
         api_version: cdi.kubevirt.io/v1beta1
         kind: DataVolume
         name: "{{ f5_datavolume_name }}-{{ f5_secondary_node }}"
         namespace: "{{ ocp_namespace }}"
-      when: dv_secondary_check.resources | length > 0
+      when:
+        - delete_disk_images | default(false) | bool
+        - dv_secondary_check.resources | length > 0
 
-    - name: Report cloned DataVolume status
+    - name: Report DataVolume status
       ansible.builtin.debug:
         msg: >
-          Cloned DataVolumes:
+          DataVolumes:
+          {% if not (delete_disk_images | default(false) | bool) %}
+          retained (delete_disk_images=false)
+          {% else %}
           primary={{ 'deleted' if dv_primary_check.resources | length > 0 else 'not found - skipped' }},
           secondary={{ 'deleted' if dv_secondary_check.resources | length > 0 else 'not found - skipped' }}
-
-    # ------------------------------------------------------------------
-    # Source DataVolume (base QCOW2 image)
-    # Only removed if delete_source_image: true — defaults to false
-    # so you can redeploy without re-uploading the image.
-    # ------------------------------------------------------------------
-
-    - name: Check if source DataVolume exists
-      kubernetes.core.k8s_info:
-        api_version: cdi.kubevirt.io/v1beta1
-        kind: DataVolume
-        name: "{{ f5_datavolume_name }}"
-        namespace: "{{ ocp_namespace }}"
-      register: dv_source_check
-      when: delete_source_image | default(false) | bool
-
-    - name: Delete source DataVolume
-      kubernetes.core.k8s:
-        state: absent
-        api_version: cdi.kubevirt.io/v1beta1
-        kind: DataVolume
-        name: "{{ f5_datavolume_name }}"
-        namespace: "{{ ocp_namespace }}"
-      when:
-        - delete_source_image | default(false) | bool
-        - dv_source_check.resources | length > 0
-
-    - name: Report source DataVolume status
-      ansible.builtin.debug:
-        msg: >
-          Source DataVolume ({{ f5_datavolume_name }}):
-          {% if not (delete_source_image | default(false) | bool) %}
-          retained (delete_source_image=false)
-          {% elif dv_source_check.resources | length > 0 %}
-          deleted
-          {% else %}
-          not found - skipped
           {% endif %}
 
     # ------------------------------------------------------------------
@@ -298,8 +274,6 @@
 
     # ------------------------------------------------------------------
     # Namespace
-    # Only removed if delete_namespace: true — defaults to false
-    # in case other resources share this namespace.
     # ------------------------------------------------------------------
 
     - name: Check if namespace exists
@@ -334,7 +308,7 @@
         - ns_check.resources | length > 0
 
     # ------------------------------------------------------------------
-    # Node network — NNCP and bridges
+    # Node network — NNCP and OVS bridge
     # ------------------------------------------------------------------
 
     - name: Check if NNCP exists
@@ -452,9 +426,8 @@
           - "Teardown complete for namespace: {{ ocp_namespace }}"
           - "VMs removed:          {{ vm_primary_check.resources | length > 0 or vm_secondary_check.resources | length > 0 }}"
           - "Secrets removed:      {{ secret_primary_check.resources | length > 0 or secret_secondary_check.resources | length > 0 }}"
-          - "Node DVs removed:     {{ dv_primary_check.resources | length > 0 or dv_secondary_check.resources | length > 0 }}"
-          - "Source image removed: {{ delete_source_image | default(false) | bool }}"
+          - "Disk images removed:  {{ delete_disk_images | default(false) | bool }}"
           - "Namespace removed:    {{ delete_namespace | default(false) | bool }}"
-          - "NNCP/bridges:     {{ 'removed' if (delete_node_network | default(false) | bool) else 'retained' }}"
-          - "NMState operator: {{ 'removed' if (delete_nmstate | default(false) | bool) else 'retained' }}"
+          - "NNCP/bridges:         {{ 'removed' if (delete_node_network | default(false) | bool) else 'retained' }}"
+          - "NMState operator:     {{ 'removed' if (delete_nmstate | default(false) | bool) else 'retained' }}"
           - "================================================"
