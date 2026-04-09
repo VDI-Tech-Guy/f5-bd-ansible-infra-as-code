@@ -26,7 +26,7 @@ cifs_password: "{{ vault_cifs_password }}"
 cifs_domain: "YOURDOMAIN"
 qcow2_filename: "BIGIP-17.5.1.5-0.0.6.qcow2"   # update to your image filename
 virtctl_arch: "x86_64"
-do_rpm_installed: false    # set false if DO RPM not baked into image
+do_rpm_install_from_cifs: true    # set false if DO RPM not baked into image
 do_filename: "f5-declarative-onboarding-1.48.0-3.noarch.rpm"
 bastion_f5_cache: "/opt/f5/cache"   # persistent cache on bastion
 
@@ -124,7 +124,7 @@ bigiq_pool: "biq_pool_name"
 # ============================================================
 # Declarative Onboarding
 # ============================================================
-do_rpm_installed: true    # set false if DO RPM not baked into image
+do_rpm_installed: false    # set false if DO RPM not baked into image
 do_poll_interval: 30      # seconds between DO status polls
 do_poll_retries: 40       # max polls (~20 min total)
 
