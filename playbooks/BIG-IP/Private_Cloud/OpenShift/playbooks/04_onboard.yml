@@ -33,6 +33,16 @@
       vars:
         node_name: "{{ f5_secondary_node }}"
 
+    - name: Clean up DO RPM from bastion cache
+      ansible.builtin.file:
+        path: "{{ bastion_f5_cache }}/{{ do_rpm_filename }}"
+        state: absent
+      delegate_to: bastion01
+      become: true
+      when:
+        - do_rpm_install_from_cifs | default(false) | bool
+        - do_install_success | default(false) | bool
+
 - name: Onboard primary node first
   hosts: localhost
   gather_facts: false
