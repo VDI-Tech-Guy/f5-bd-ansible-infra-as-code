@@ -1,0 +1,134 @@
+---
+# Role: f5_install_do
+# Installs the F5 Declarative Onboarding RPM on BIG-IP via iControl REST.
+# RPM is sourced from the bastion cache (populated by f5_image_upload role).
+# Skips installation if DO is already installed on the target BIG-IP.
+
+- name: Check if DO is already installed on {{ node_name }}
+  ansible.builtin.uri:
+    url: "https://{{ hostvars[node_name].f5_mgmt_ip }}/mgmt/shared/declarative-onboarding"
+    method: GET
+    user: admin
+    password: "{{ f5_admin_password }}"
+    validate_certs: false
+    status_code: [200, 404]
+  register: do_check
+  delegate_to: localhost
+
+- name: Set DO install needed fact
+  ansible.builtin.set_fact:
+    do_install_needed: "{{ do_check.status == 404 }}"
+
+- name: DO install block
+  when:
+    - do_rpm_install_from_cifs | default(false) | bool
+    - do_install_needed
+  block:
+
+    # ------------------------------------------------------------------
+    # Verify RPM exists on bastion cache
+    # ------------------------------------------------------------------
+
+    - name: Verify DO RPM exists in bastion cache
+      ansible.builtin.stat:
+        path: "{{ bastion_f5_cache }}/{{ do_rpm_filename }}"
+      register: do_rpm_cache_stat
+      delegate_to: bastion01
+      failed_when: not do_rpm_cache_stat.stat.exists
+
+    # ------------------------------------------------------------------
+    # Upload RPM to BIG-IP via iControl REST file transfer
+    # ------------------------------------------------------------------
+
+    - name: Upload DO RPM to BIG-IP
+      ansible.builtin.shell: >
+        curl -sku admin:{{ f5_admin_password }}
+        -X POST
+        https://{{ hostvars[node_name].f5_mgmt_ip }}/mgmt/shared/file-transfer/uploads/{{ do_rpm_filename }}
+        -H "Content-Type: application/octet-stream"
+        -H "Content-Range: 0-$(( $(stat -c%s {{ bastion_f5_cache }}/{{ do_rpm_filename }}) - 1 ))/$(stat -c%s {{ bastion_f5_cache }}/{{ do_rpm_filename }})"
+        -H "Content-Length: $(stat -c%s {{ bastion_f5_cache }}/{{ do_rpm_filename }})"
+        --data-binary @{{ bastion_f5_cache }}/{{ do_rpm_filename }}
+      delegate_to: bastion01
+      register: rpm_upload
+      changed_when: true
+      no_log: true
+
+    # ------------------------------------------------------------------
+    # Install RPM via package management task
+    # ------------------------------------------------------------------
+
+    - name: Install DO RPM on BIG-IP
+      ansible.builtin.uri:
+        url: "https://{{ hostvars[node_name].f5_mgmt_ip }}/mgmt/shared/iapp/package-management-tasks"
+        method: POST
+        user: admin
+        password: "{{ f5_admin_password }}"
+        validate_certs: false
+        body_format: json
+        body:
+          operation: INSTALL
+          packageFilePath: "/var/config/rest/downloads/{{ do_rpm_filename }}"
+        status_code: [200, 202]
+      register: install_task
+      delegate_to: localhost
+
+    - name: Set install task ID
+      ansible.builtin.set_fact:
+        do_install_task_id: "{{ install_task.json.id }}"
+
+    - name: Poll RPM install task until complete
+      ansible.builtin.uri:
+        url: "https://{{ hostvars[node_name].f5_mgmt_ip }}/mgmt/shared/iapp/package-management-tasks/{{ do_install_task_id }}"
+        method: GET
+        user: admin
+        password: "{{ f5_admin_password }}"
+        validate_certs: false
+        status_code: [200]
+      register: install_poll
+      until: install_poll.json.status | default('') in ['FINISHED', 'FAILED']
+      retries: 20
+      delay: 15
+      delegate_to: localhost
+      no_log: true
+
+    - name: Fail if RPM install failed
+      ansible.builtin.fail:
+        msg: "DO RPM installation failed on {{ node_name }}: {{ install_poll.json.errorMessage | default('unknown error') }}"
+      when: install_poll.json.status == 'FAILED'
+
+    # ------------------------------------------------------------------
+    # Wait for DO endpoint to become available
+    # ------------------------------------------------------------------
+
+    - name: Wait for DO endpoint to be available
+      ansible.builtin.uri:
+        url: "https://{{ hostvars[node_name].f5_mgmt_ip }}/mgmt/shared/declarative-onboarding"
+        method: GET
+        user: admin
+        password: "{{ f5_admin_password }}"
+        validate_certs: false
+        status_code: [200]
+      register: do_ready
+      until: do_ready.status == 200
+      retries: 20
+      delay: 15
+      delegate_to: localhost
+      no_log: true
+
+    - name: Confirm DO is installed and ready
+      ansible.builtin.debug:
+        msg: "DO successfully installed on {{ node_name }} ({{ hostvars[node_name].f5_mgmt_ip }})"
+
+  always:
+    # ------------------------------------------------------------------
+    # Clean up RPM from bastion cache after install
+    # ------------------------------------------------------------------
+
+    - name: Clean up DO RPM from bastion cache
+      ansible.builtin.file:
+        path: "{{ bastion_f5_cache }}/{{ do_rpm_filename }}"
+        state: absent
+      delegate_to: bastion01
+      become: true
+      when: do_rpm_install_from_cifs | default(false) | bool

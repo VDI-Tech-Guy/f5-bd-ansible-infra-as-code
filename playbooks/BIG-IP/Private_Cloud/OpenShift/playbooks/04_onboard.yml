@@ -1,9 +1,4 @@
 ---
-# playbooks/04_onboard.yml
-# Waits for both nodes to be reachable, then runs Declarative Onboarding.
-# IMPORTANT: primary must complete DO before secondary — device trust
-# in the DO declaration requires the primary to already be onboarded.
-
 - name: Wait for both BIG-IP nodes to be ready
   hosts: localhost
   gather_facts: false
@@ -18,6 +13,23 @@
     - name: Wait for secondary management interface
       ansible.builtin.include_role:
         name: f5_wait_mgmt
+      vars:
+        node_name: "{{ f5_secondary_node }}"
+
+- name: Install DO RPM on both nodes
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: Install DO on primary
+      ansible.builtin.include_role:
+        name: f5_install_do
+      vars:
+        node_name: "{{ f5_primary_node }}"
+
+    - name: Install DO on secondary
+      ansible.builtin.include_role:
+        name: f5_install_do
       vars:
         node_name: "{{ f5_secondary_node }}"
 

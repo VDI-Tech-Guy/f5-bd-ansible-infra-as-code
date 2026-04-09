@@ -173,6 +173,38 @@
       delegate_to: bastion01
       failed_when: not qcow2_stat.stat.exists
 
+    - name: Verify DO RPM exists on share
+      ansible.builtin.stat:
+        path: "{{ cifs_mountpoint }}/{{ do_rpm_filename }}"
+      register: do_rpm_stat
+      delegate_to: bastion01
+      failed_when:
+        - do_rpm_install_from_cifs | default(false) | bool
+        - not do_rpm_stat.stat.exists
+      when: do_rpm_install_from_cifs | default(false) | bool
+
+    # ------------------------------------------------------------------
+    # Store Declarative Onboarding (DO) into bastion Box in cached area
+    # ------------------------------------------------------------------
+
+    - name: Create F5 cache directory on bastion
+      ansible.builtin.file:
+        path: "{{ bastion_f5_cache }}"
+        state: directory
+        mode: '0755'
+      become: true
+      delegate_to: bastion01
+      when: do_rpm_install_from_cifs | default(false) | bool
+
+    - name: Cache DO RPM on bastion from CIFS
+      ansible.builtin.copy:
+        src: "{{ cifs_mountpoint }}/{{ do_rpm_filename }}"
+        dest: "{{ bastion_f5_cache }}/{{ do_rpm_filename }}"
+        remote_src: true
+        mode: '0644'
+      delegate_to: bastion01
+      when: do_rpm_install_from_cifs | default(false) | bool
+
     # ------------------------------------------------------------------
     # Get CDI upload proxy URL
     # ------------------------------------------------------------------
