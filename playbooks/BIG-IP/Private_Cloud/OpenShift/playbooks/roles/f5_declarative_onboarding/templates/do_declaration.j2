@@ -9,13 +9,6 @@
   "Common": {
     "class": "Tenant",
 
-{% if f5_license_type == 'regkey' %}
-    "myLicense": {
-      "class": "License",
-      "licenseType": "regKey",
-      "regKey": "{{ f5_license_key_node1 if node_name == f5_primary_node else f5_license_key_node2 }}"
-    },
-{% elif f5_license_type == 'bigiq' %}
     "myLicense": {
       "class": "License",
       "licenseType": "licensePool",
@@ -23,10 +16,11 @@
       "bigIqUsername": "{{ bigiq_username }}",
       "bigIqPassword": "{{ bigiq_password }}",
       "licensePool": "{{ bigiq_pool }}",
-      "reachable": false,
-      "hypervisor": "kvm"
+      "reachable": true,
+      "bigIpUsername": "admin",
+      "bigIpPassword": "{{ f5_admin_password }}",
+      "overwrite": true
     },
-{% endif %}
 
     "myDns": {
       "class": "DNS",
@@ -109,25 +103,25 @@
 
     "myConfigSync": {
       "class": "ConfigSync",
-      "configsyncIp": "/Common/self-ha/address"
+      "configsyncIp": "{{ hostvars[node_name].f5_self_ha | ansible.utils.ipaddr('address') }}"
     },
 
     "myFailoverUnicast": {
       "class": "FailoverUnicast",
-      "address": "/Common/self-ha/address"
+      "address": "{{ hostvars[node_name].f5_self_ha | ansible.utils.ipaddr('address') }}"
     },
 
     "myMirror": {
       "class": "MirrorIp",
-      "primaryIp": "/Common/self-ha/address"
+      "primaryIp": "{{ hostvars[node_name].f5_self_ha | ansible.utils.ipaddr('address') }}"
     },
 
     "myDeviceGroup": {
       "class": "DeviceGroup",
       "type": "sync-failover",
       "members": [
-        "{{ hostvars[f5_primary_node].f5_hostname }}",
-        "{{ hostvars[f5_secondary_node].f5_hostname }}"
+        "{{ hostvars[f5_primary_node].f5_mgmt_ip }}",
+        "{{ hostvars[f5_secondary_node].f5_mgmt_ip }}"
       ],
       "owner": "/Common/myDeviceGroup/members/0",
       "autoSync": true,
@@ -140,7 +134,7 @@
       "class": "DeviceTrust",
       "localUsername": "admin",
       "localPassword": "{{ f5_admin_password }}",
-      "remoteHost": "{{ hostvars[node_name].f5_ha_peer_ip }}",
+      "remoteHost": "/Common/myDeviceGroup/members/0",
       "remoteUsername": "admin",
       "remotePassword": "{{ f5_admin_password }}"
     }
