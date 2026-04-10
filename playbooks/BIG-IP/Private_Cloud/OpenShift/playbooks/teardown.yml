@@ -17,6 +17,61 @@
   tasks:
 
     # ------------------------------------------------------------------
+    # Revoke BIG-IQ licenses
+    # Must run before VM deletion — BIG-IP must still be reachable
+    # ------------------------------------------------------------------
+
+    - name: Revoke license for primary from BIG-IQ
+      ansible.builtin.uri:
+        url: "https://{{ bigiq_host }}/mgmt/cm/device/tasks/licensing/pool/member-management"
+        method: POST
+        body_format: json
+        body:
+          address: "{{ hostvars[f5_primary_node].f5_mgmt_ip }}"
+          assignmentType: "unmanaged"
+          command: "revoke"
+          licensePoolName: "{{ bigiq_pool }}"
+          password: "{{ f5_admin_password }}"
+          user: "admin"
+        return_content: true
+        status_code: [200, 202]
+        force_basic_auth: true
+        user: "{{ bigiq_username }}"
+        password: "{{ bigiq_password }}"
+        validate_certs: false
+      delegate_to: localhost
+      no_log: true
+      when: bigiq_revoke_on_teardown | default(false) | bool
+      failed_when: false
+
+    - name: Revoke license for secondary from BIG-IQ
+      ansible.builtin.uri:
+        url: "https://{{ bigiq_host }}/mgmt/cm/device/tasks/licensing/pool/member-management"
+        method: POST
+        body_format: json
+        body:
+          address: "{{ hostvars[f5_secondary_node].f5_mgmt_ip }}"
+          assignmentType: "unmanaged"
+          command: "revoke"
+          licensePoolName: "{{ bigiq_pool }}"
+          password: "{{ f5_admin_password }}"
+          user: "admin"
+        return_content: true
+        status_code: [200, 202]
+        force_basic_auth: true
+        user: "{{ bigiq_username }}"
+        password: "{{ bigiq_password }}"
+        validate_certs: false
+      delegate_to: localhost
+      no_log: true
+      when: bigiq_revoke_on_teardown | default(false) | bool
+      failed_when: false
+
+    - name: Report license revocation status
+      ansible.builtin.debug:
+        msg: "BIG-IQ license revocation: {{ 'completed' if (bigiq_revoke_on_teardown | default(false) | bool) else 'skipped (bigiq_revoke_on_teardown=false)' }}"
+
+    # ------------------------------------------------------------------
     # VirtualMachines
     # ------------------------------------------------------------------
 
@@ -423,6 +478,7 @@
       ansible.builtin.debug:
         msg:
           - "================================================"
+          - "Licenses revoked:     {{ bigiq_revoke_on_teardown | default(false) | bool }}"
           - "Teardown complete for namespace: {{ ocp_namespace }}"
           - "VMs removed:          {{ vm_primary_check.resources | length > 0 or vm_secondary_check.resources | length > 0 }}"
           - "Secrets removed:      {{ secret_primary_check.resources | length > 0 or secret_secondary_check.resources | length > 0 }}"
