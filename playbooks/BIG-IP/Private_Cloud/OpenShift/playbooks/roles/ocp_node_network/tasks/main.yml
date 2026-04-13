@@ -15,7 +15,7 @@
   kubernetes.core.k8s_info:
     api_version: nmstate.io/v1
     kind: NodeNetworkConfigurationPolicy
-    name: ovs-vms
+    name: "{{ nmstate_bridge_name }}"
   register: nncp_check
 
 - name: Check current NNCP condition
@@ -39,7 +39,7 @@
   kubernetes.core.k8s_info:
     api_version: nmstate.io/v1
     kind: NodeNetworkConfigurationPolicy
-    name: ovs-vms
+    name: "{{ nmstate_bridge_name }}" 
   register: nncp_status
   until: >
     nncp_status.resources | length > 0 and
@@ -56,13 +56,13 @@
     api_version: nmstate.io/v1
     kind: NodeNetworkConfigurationEnactment
     label_selectors:
-      - nmstate.io/policy=ovs-vms
+      - "nmstate.io/policy={{ nmstate_bridge_name }}"
   register: nnce_status
 
 - name: Report per-node bridge status
   ansible.builtin.debug:
     msg: >
-      Node {{ item.metadata.name | regex_replace('\.ovs-vms', '') }}:
+      Node {{ item.metadata.name | regex_replace('\.' + nmstate_bridge_name, '') }}:
       {{ item.status.conditions |
          selectattr('type', 'equalto', 'Available') |
          map(attribute='status') | first | default('Unknown') }}

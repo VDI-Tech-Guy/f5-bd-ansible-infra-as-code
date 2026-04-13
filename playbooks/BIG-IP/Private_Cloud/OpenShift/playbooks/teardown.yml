@@ -370,7 +370,7 @@
       kubernetes.core.k8s_info:
         api_version: nmstate.io/v1
         kind: NodeNetworkConfigurationPolicy
-        name: ovs-vms
+        name: "{{ nmstate_bridge_name }}"
       register: nncp_check
       when: delete_node_network | default(false) | bool
 
@@ -379,7 +379,7 @@
         state: absent
         api_version: nmstate.io/v1
         kind: NodeNetworkConfigurationPolicy
-        name: ovs-vms
+        name: "{{ nmstate_bridge_name }}"
       when:
         - delete_node_network | default(false) | bool
         - nncp_check.resources | length > 0
@@ -388,7 +388,7 @@
       kubernetes.core.k8s_info:
         api_version: nmstate.io/v1
         kind: NodeNetworkConfigurationPolicy
-        name: ovs-vms
+        name: "{{ nmstate_bridge_name }}"
       register: nncp_gone
       until: nncp_gone.resources | length == 0
       retries: 20
