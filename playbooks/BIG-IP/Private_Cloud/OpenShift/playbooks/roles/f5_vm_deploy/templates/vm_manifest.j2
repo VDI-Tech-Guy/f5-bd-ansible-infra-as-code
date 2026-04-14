@@ -16,14 +16,14 @@ spec:
         kubevirt.io/vm: "{{ node_name }}"
     spec:
       nodeSelector:
-        node-role.kubernetes.io/worker: ""   # pin to worker nodes
+        node-role.kubernetes.io/worker: ""
       affinity:
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
             - labelSelector:
                 matchLabels:
                   app: f5-bigip
-              topologyKey: kubernetes.io/hostname   # force HA nodes to different hosts
+              topologyKey: kubernetes.io/hostname
 
       domain:
         cpu:
@@ -40,28 +40,17 @@ spec:
               disk:
                 bus: virtio
           interfaces:
-            - name: mgmt
+{% for net in f5_networks %}
+            - name: "{{ net.name }}"
               bridge: {}
-            - name: internal
-              bridge: {}
-            - name: external
-              bridge: {}
-            - name: ha
-              bridge: {}
+{% endfor %}
 
       networks:
-        - name: mgmt
+{% for net in f5_networks %}
+        - name: "{{ net.name }}"
           multus:
-            networkName: "{{ ocp_namespace }}/f5-mgmt"
-        - name: internal
-          multus:
-            networkName: "{{ ocp_namespace }}/f5-internal"
-        - name: external
-          multus:
-            networkName: "{{ ocp_namespace }}/f5-external"
-        - name: ha
-          multus:
-            networkName: "{{ ocp_namespace }}/f5-ha"
+            networkName: "{{ ocp_namespace }}/{{ net.nad_name }}"
+{% endfor %}
 
       volumes:
         - name: rootdisk
