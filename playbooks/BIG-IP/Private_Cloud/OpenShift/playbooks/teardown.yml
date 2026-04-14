@@ -6,9 +6,11 @@
 #
 # Safety flags (all default false — must be explicitly set):
 #   delete_disk_images: true    → removes per-node DataVolumes (uploaded disk images)
+#                                 NOTE: old variable name 'delete_source_image' is no longer supported
 #   delete_namespace: true      → removes the entire namespace at the end
-#   delete_node_network: true   → removes the NNCP/OVS bridge config
+#   delete_node_network: true   → removes the NNCP/OVS bridge config + forces bridge cleanup
 #   delete_nmstate: true        → removes the NMState operator entirely
+#   bigiq_revoke_on_teardown: true → revokes BIG-IQ licenses before VM deletion
 
 - name: Teardown F5 BIG-IP deployment
   hosts: localhost
@@ -189,7 +191,15 @@
     # Per-node DataVolumes (uploaded disk images)
     # Only removed if delete_disk_images: true — defaults to false
     # so you can redeploy without re-uploading the images.
+    # NOTE: old variable 'delete_source_image' is no longer supported.
     # ------------------------------------------------------------------
+
+    - name: Warn if deprecated delete_source_image variable is set
+      ansible.builtin.debug:
+        msg: >
+          WARNING: 'delete_source_image' is deprecated and no longer supported.
+          Use 'delete_disk_images: true' instead. DataVolumes will NOT be deleted.
+      when: delete_source_image is defined
 
     - name: Check if primary DataVolume exists
       kubernetes.core.k8s_info:
@@ -364,6 +374,10 @@
 
     # ------------------------------------------------------------------
     # Node network — NNCP and OVS bridge
+    # Deletes the NNCP then forces bridge cleanup via a temporary
+    # absent-state NNCP to ensure NMState removes the bridge from all
+    # nodes. Without this, the OVS bridge can persist and cause stale
+    # bridge-mapping conflicts on next deployment.
     # ------------------------------------------------------------------
 
     - name: Check if NNCP exists
@@ -397,9 +411,51 @@
         - delete_node_network | default(false) | bool
         - nncp_check.resources | length > 0
 
+    - name: Apply bridge cleanup NNCP to force OVS bridge removal
+      kubernetes.core.k8s:
+        state: present
+        definition:
+          apiVersion: nmstate.io/v1
+          kind: NodeNetworkConfigurationPolicy
+          metadata:
+            name: "{{ nmstate_bridge_name }}-cleanup"
+          spec:
+            nodeSelector:
+              node-role.kubernetes.io/worker: ''
+            desiredState:
+              interfaces:
+                - name: "{{ nmstate_bridge_name }}"
+                  type: ovs-bridge
+                  state: absent
+      when: delete_node_network | default(false) | bool
+
+    - name: Wait for bridge cleanup NNCP to complete
+      kubernetes.core.k8s_info:
+        api_version: nmstate.io/v1
+        kind: NodeNetworkConfigurationPolicy
+        name: "{{ nmstate_bridge_name }}-cleanup"
+      register: cleanup_nncp
+      until: >
+        cleanup_nncp.resources | length > 0 and
+        (cleanup_nncp.resources[0].status.conditions | default([]) |
+         selectattr('type', 'equalto', 'Available') |
+         selectattr('status', 'equalto', 'True') |
+         list | length > 0)
+      retries: 20
+      delay: 15
+      when: delete_node_network | default(false) | bool
+
+    - name: Delete bridge cleanup NNCP
+      kubernetes.core.k8s:
+        state: absent
+        api_version: nmstate.io/v1
+        kind: NodeNetworkConfigurationPolicy
+        name: "{{ nmstate_bridge_name }}-cleanup"
+      when: delete_node_network | default(false) | bool
+
     - name: Report NNCP status
       ansible.builtin.debug:
-        msg: "NNCP: {{ 'deleted' if (delete_node_network | default(false) | bool) and nncp_check.resources | length > 0 else 'retained (delete_node_network=false)' }}"
+        msg: "NNCP/bridge: {{ 'removed' if (delete_node_network | default(false) | bool) and nncp_check.resources | length > 0 else 'retained (delete_node_network=false)' }}"
 
     # ------------------------------------------------------------------
     # NMState operator
