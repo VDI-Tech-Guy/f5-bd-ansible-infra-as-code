@@ -270,6 +270,121 @@
               storageClassName: "{{ f5_storage_class }}"
       when: upload_needed_secondary
 
+    # ------------------------------------------------------------------
+    # WaitForFirstConsumer workaround
+    # Some storage classes (e.g. LVMS) use WaitForFirstConsumer binding
+    # mode which requires a consumer pod to be scheduled before the PVC
+    # will bind. CDI upload needs the PVC bound first — deadlock.
+    # Fix: annotate the PVC with a selected node to force binding.
+    # Skipped automatically for Immediate binding storage classes (NFS etc).
+    # ------------------------------------------------------------------
+
+    - name: Check if storage class uses WaitForFirstConsumer binding
+      kubernetes.core.k8s_info:
+        api_version: storage.k8s.io/v1
+        kind: StorageClass
+        name: "{{ f5_storage_class }}"
+      register: sc_info
+
+    - name: Set binding mode fact
+      ansible.builtin.set_fact:
+        sc_wait_for_consumer: >-
+          {{ sc_info.resources[0].volumeBindingMode == 'WaitForFirstConsumer' }}
+
+    - name: Get worker nodes for WaitForFirstConsumer binding workaround
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Node
+        label_selectors:
+          - node-role.kubernetes.io/worker=
+      register: worker_nodes
+      when: sc_wait_for_consumer | bool
+
+    - name: Report WaitForFirstConsumer workaround required
+      ansible.builtin.debug:
+        msg: >
+          Storage class '{{ f5_storage_class }}' uses WaitForFirstConsumer binding mode.
+          Annotating PVCs with selected worker nodes to force PVC binding for CDI upload.
+      when: sc_wait_for_consumer | bool
+
+    - name: Wait for primary PVC to be created by CDI
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: PersistentVolumeClaim
+        name: "{{ f5_datavolume_name }}-{{ f5_primary_node }}"
+        namespace: "{{ ocp_namespace }}"
+      register: pvc_primary_wait
+      until: pvc_primary_wait.resources | length > 0
+      retries: 20
+      delay: 5
+      when:
+        - sc_wait_for_consumer | bool
+        - upload_needed_primary
+
+    - name: Wait for secondary PVC to be created by CDI
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: PersistentVolumeClaim
+        name: "{{ f5_datavolume_name }}-{{ f5_secondary_node }}"
+        namespace: "{{ ocp_namespace }}"
+      register: pvc_secondary_wait
+      until: pvc_secondary_wait.resources | length > 0
+      retries: 20
+      delay: 5
+      when:
+        - sc_wait_for_consumer | bool
+        - upload_needed_secondary
+
+    - name: Force PVC binding for primary by annotating selected node
+      kubernetes.core.k8s:
+        state: patched
+        api_version: v1
+        kind: PersistentVolumeClaim
+        name: "{{ f5_datavolume_name }}-{{ f5_primary_node }}"
+        namespace: "{{ ocp_namespace }}"
+        definition:
+          metadata:
+            annotations:
+              volume.kubernetes.io/selected-node: "{{ worker_nodes.resources[0].metadata.name }}"
+      when:
+        - sc_wait_for_consumer | bool
+        - upload_needed_primary
+      retries: 10
+      delay: 5
+      register: pvc_primary_patch
+      until: pvc_primary_patch is not failed
+
+    - name: Force PVC binding for secondary by annotating selected node
+      kubernetes.core.k8s:
+        state: patched
+        api_version: v1
+        kind: PersistentVolumeClaim
+        name: "{{ f5_datavolume_name }}-{{ f5_secondary_node }}"
+        namespace: "{{ ocp_namespace }}"
+        definition:
+          metadata:
+            annotations:
+              volume.kubernetes.io/selected-node: "{{ worker_nodes.resources[1].metadata.name }}"
+      when:
+        - sc_wait_for_consumer | bool
+        - upload_needed_secondary
+      retries: 10
+      delay: 5
+      register: pvc_secondary_patch
+      until: pvc_secondary_patch is not failed
+
+    - name: Report WaitForFirstConsumer workaround applied
+      ansible.builtin.debug:
+        msg:
+          - "WaitForFirstConsumer workaround applied:"
+          - "primary PVC → node: {{ worker_nodes.resources[0].metadata.name }}"
+          - "secondary PVC → node: {{ worker_nodes.resources[1].metadata.name }}"
+      when: sc_wait_for_consumer | bool
+
+    # ------------------------------------------------------------------
+    # Wait for DVs to be ready for upload
+    # ------------------------------------------------------------------
+
     - name: Wait for primary DataVolume to be ready for upload
       kubernetes.core.k8s_info:
         api_version: cdi.kubevirt.io/v1beta1
