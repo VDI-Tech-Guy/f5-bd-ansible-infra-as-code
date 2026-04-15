@@ -5,6 +5,89 @@
 #       injected by AAP's "OpenShift or Kubernetes API" credential.
 #       No kubeconfig reference anywhere in this role.
 
+# ------------------------------------------------------------------
+# Preflight checks
+# ------------------------------------------------------------------
+
+- name: Check OpenShift Virtualization is installed
+  kubernetes.core.k8s_info:
+    api_version: hco.kubevirt.io/v1beta1
+    kind: HyperConverged
+    namespace: openshift-cnv
+  register: hco_check
+  failed_when: false
+
+- name: Fail if OpenShift Virtualization not installed
+  ansible.builtin.fail:
+    msg: |
+      OpenShift Virtualization is not installed on this cluster.
+      Please install it via OperatorHub before running this playbook.
+      Operators → OperatorHub → search "OpenShift Virtualization" → Install
+  when: hco_check.resources | length == 0
+
+- name: Check NMState operator is installed
+  kubernetes.core.k8s_info:
+    api_version: nmstate.io/v1
+    kind: NMState
+    name: nmstate
+  register: nmstate_check
+  failed_when: false
+
+- name: Fail if NMState not installed
+  ansible.builtin.fail:
+    msg: |
+      NMState operator is not installed on this cluster.
+      Please install it via OperatorHub before running this playbook.
+      Operators → OperatorHub → search "NMState" → Install
+  when: nmstate_check.resources | length == 0
+
+- name: Check CDI is available
+  kubernetes.core.k8s_info:
+    api_version: cdi.kubevirt.io/v1beta1
+    kind: CDI
+    namespace: openshift-cnv
+  register: cdi_check
+  failed_when: false
+
+- name: Fail if CDI not available
+  ansible.builtin.fail:
+    msg: |
+      CDI (Containerized Data Importer) is not available.
+      This is installed automatically with OpenShift Virtualization.
+      Please ensure OpenShift Virtualization is fully deployed.
+  when: cdi_check.resources | length == 0
+
+- name: Check storage class exists
+  kubernetes.core.k8s_info:
+    api_version: storage.k8s.io/v1
+    kind: StorageClass
+    name: "{{ f5_storage_class }}"
+  register: sc_check
+  failed_when: false
+
+- name: Fail if storage class not found
+  ansible.builtin.fail:
+    msg: |
+      Storage class '{{ f5_storage_class }}' not found on this cluster.
+      Please update f5_storage_class in your extravars to match an available storage class.
+      Run 'oc get storageclass' to see available storage classes.
+  when: sc_check.resources | length == 0
+
+- name: Preflight checks passed
+  ansible.builtin.debug:
+    msg:
+      - "================================================"
+      - "Preflight checks passed"
+      - "OpenShift Virtualization: installed ✓"
+      - "NMState operator:         installed ✓"
+      - "CDI:                      available ✓"
+      - "Storage class:            {{ f5_storage_class }} found ✓"
+      - "================================================"
+
+# ------------------------------------------------------------------
+# Namespace, service account, SCC binding
+# ------------------------------------------------------------------
+
 - name: Create F5 namespace
   kubernetes.core.k8s:
     state: present
@@ -43,6 +126,10 @@
         name: system:openshift:scc:privileged
         apiGroup: rbac.authorization.k8s.io
 
+# ------------------------------------------------------------------
+# Multus NADs
+# ------------------------------------------------------------------
+
 - name: Create NetworkAttachmentDefinition for each VLAN
   kubernetes.core.k8s:
     state: present
@@ -51,6 +138,10 @@
   loop_control:
     loop_var: nad_item
     label: "{{ nad_item.name }} VLAN {{ nad_item.vlan_id }}"
+
+# ------------------------------------------------------------------
+# CDI upload proxy
+# ------------------------------------------------------------------
 
 - name: Verify CDI is available
   kubernetes.core.k8s_info:
