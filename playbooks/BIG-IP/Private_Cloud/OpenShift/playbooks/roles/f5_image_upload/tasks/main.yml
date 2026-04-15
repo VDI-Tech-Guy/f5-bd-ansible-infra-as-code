@@ -291,20 +291,40 @@
         sc_wait_for_consumer: >-
           {{ sc_info.resources[0].volumeBindingMode == 'WaitForFirstConsumer' }}
 
-    - name: Get worker nodes for WaitForFirstConsumer binding workaround
+    - name: Get dedicated worker nodes for WaitForFirstConsumer binding workaround
       kubernetes.core.k8s_info:
         api_version: v1
         kind: Node
         label_selectors:
           - node-role.kubernetes.io/worker=
-      register: worker_nodes
+      register: worker_nodes_dedicated
+      when: sc_wait_for_consumer | bool
+
+    - name: Get all nodes as fallback for SNO
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Node
+      register: worker_nodes_all
+      when:
+        - sc_wait_for_consumer | bool
+        - worker_nodes_dedicated.resources | length == 0
+
+    - name: Set worker nodes fact
+      ansible.builtin.set_fact:
+        worker_nodes: >-
+          {{
+            worker_nodes_dedicated
+            if worker_nodes_dedicated.resources | length > 0
+            else worker_nodes_all
+          }}
       when: sc_wait_for_consumer | bool
 
     - name: Report WaitForFirstConsumer workaround required
       ansible.builtin.debug:
         msg: >
           Storage class '{{ f5_storage_class }}' uses WaitForFirstConsumer binding mode.
-          Annotating PVCs with selected worker nodes to force PVC binding for CDI upload.
+          Annotating PVCs with selected nodes to force PVC binding for CDI upload.
+          Available nodes: {{ worker_nodes.resources | map(attribute='metadata.name') | list }}
       when: sc_wait_for_consumer | bool
 
     - name: Wait for primary PVC to be created by CDI
@@ -364,7 +384,12 @@
         definition:
           metadata:
             annotations:
-              volume.kubernetes.io/selected-node: "{{ worker_nodes.resources[1].metadata.name }}"
+              volume.kubernetes.io/selected-node: >-
+                {{
+                  worker_nodes.resources[1].metadata.name
+                  if worker_nodes.resources | length > 1
+                  else worker_nodes.resources[0].metadata.name
+                }}
       when:
         - sc_wait_for_consumer | bool
         - upload_needed_secondary
@@ -378,7 +403,7 @@
         msg:
           - "WaitForFirstConsumer workaround applied:"
           - "primary PVC → node: {{ worker_nodes.resources[0].metadata.name }}"
-          - "secondary PVC → node: {{ worker_nodes.resources[1].metadata.name }}"
+          - "secondary PVC → node: {{ worker_nodes.resources[1].metadata.name if worker_nodes.resources | length > 1 else worker_nodes.resources[0].metadata.name }}"
       when: sc_wait_for_consumer | bool
 
     # ------------------------------------------------------------------
