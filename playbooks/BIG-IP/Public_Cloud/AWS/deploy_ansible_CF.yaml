@@ -7,7 +7,7 @@
   vars:
     stack_name: mmabis-bigip-ha-demo
     region: us-east-1
-    template_file: bigip_ha_3nic.yaml
+    template_file: bigip_ha_3nic.cfn
     keypair_name: mmabis-bigipKeyPair
     keypair_file: bigipKeyPair.pem
     # bigip_ami: ami-xxxxxxxxxxxx  # Replace with PAYG AMI ID from AWS Marketplace
