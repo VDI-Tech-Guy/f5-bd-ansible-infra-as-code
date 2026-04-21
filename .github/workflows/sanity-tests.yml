@@ -1,5 +1,10 @@
 ---
 name: Sanity tests
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [main]
@@ -7,7 +12,7 @@ on:
     branches: ["main"]
 
 jobs:
-  build:
+  sanity:
     runs-on: ubuntu-latest
 
     env:
@@ -16,8 +21,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install ansible-core
+        run: python3 -m pip install ansible-core --disable-pip-version-check
+
       - name: Install collection dependencies
         run: ansible-galaxy collection install . -vvv
 
-      - name: Run ansible-lint
-        uses: ansible-network/github_actions/.github/workflows/sanity.yml@main
+      - name: Build collection
+        run: ansible-galaxy collection build
+
+      - name: Install collection
+        run: ansible-galaxy collection install ./f5networks-*.tar.gz --pre -p /home/runner/.ansible/collections
+
+      - name: Run sanity tests
+        run: ansible-test sanity --requirements --color --python 3.11
+        working-directory: /home/runner/.ansible/collections/ansible_collections/f5networks/f5_infra_as_code_deployments
