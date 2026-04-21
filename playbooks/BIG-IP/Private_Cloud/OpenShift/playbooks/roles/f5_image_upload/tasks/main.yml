@@ -39,6 +39,7 @@
   delegate_to: bastion01
 
 - name: Download and install virtctl on bastion
+  when: not virtctl_stat.stat.exists
   block:
     - name: Download virtctl tarball
       ansible.builtin.get_url:
@@ -64,7 +65,7 @@
         state: absent
       become: true
       delegate_to: bastion01
-  when: not virtctl_stat.stat.exists
+
 
 - name: Verify virtctl works
   ansible.builtin.command: /usr/local/bin/virtctl version --client
