@@ -1,27 +1,19 @@
 ---
 name: Sanity tests
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   pull_request:
     branches: ["main"]
 
 jobs:
   sanity-tests:
-    runs-on: ubuntu-latest
-
-    env:
-      ANSIBLE_GALAXY_SERVER_AUTOMATION_HUB_TOKEN: ${{ secrets.AH_TOKEN }}
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install dependencies
-        run: ansible-galaxy collection install . -vvv
-
-      - name: Install ansible-test
-        run: pip install ansible-core
-
-      - name: Run sanity tests
-        run: ansible-test sanity --docker
+    uses: ansible-network/github_actions/.github/workflows/sanity.yml@main
+    secrets:
+      AH_TOKEN: ${{ secrets.AH_TOKEN }}
