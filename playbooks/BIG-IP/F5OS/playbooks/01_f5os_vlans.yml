@@ -1,0 +1,27 @@
+---
+# playbooks/01_f5os_vlans.yml
+# Phase 1a — Creates VLANs on each F5OS partition.
+# Phase 1b — Optionally associates those VLANs to physical interfaces or LAGs.
+#
+# VLAN creation is always run (idempotent — no-op for existing VLANs).
+#
+# Interface assignment is optional — gated by f5os_interface_vlan_enabled
+# (default false). Enable it when you want this playbook to fully wire
+# the network stack end-to-end. Leave it disabled when:
+#   - Interfaces are already configured on the partition
+#   - You want to configure interfaces manually or via a separate job
+#   - Running in a lab where physical wiring doesn't matter
+
+- name: Phase 1a — Create VLANs on F5OS partitions
+  hosts: f5os_partitions
+  connection: httpapi
+  gather_facts: false
+  roles:
+    - role: f5os_vlans
+
+- name: Phase 1b — Associate VLANs to interfaces / LAGs (optional)
+  hosts: f5os_partitions
+  connection: httpapi
+  gather_facts: false
+  roles:
+    - role: f5os_interface_vlans

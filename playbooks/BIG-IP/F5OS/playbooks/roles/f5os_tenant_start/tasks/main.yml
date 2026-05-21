@@ -1,0 +1,35 @@
+---
+# Role: f5os_tenant_start
+# Transitions the tenant from 'configured' to 'deployed' (running) state,
+# then waits for the BIG-IP management GUI to respond — confirming the
+# tenant has fully booted and TMOS is up.
+# Pattern taken directly from the proven start_f5_os_tenant_ha role.
+#
+# Call with: vars: { node_name: "bigip-01" }
+
+- name: Set tenant name for {{ node_name }}
+  ansible.builtin.set_fact:
+    f5os_tenant_name: "{{ node_name.split('.')[0] | lower }}"
+
+- name: Start tenant {{ f5os_tenant_name }} on {{ inventory_hostname }} (deployed state)
+  f5networks.f5os.f5os_tenant:
+    name: "{{ f5os_tenant_name }}"
+    nodes: "{{ tenant_nodes }}"
+    running_state: deployed
+
+- name: Wait for BIG-IP tenant management GUI to respond on {{ node_name }}
+  ansible.builtin.uri:
+    url: "https://{{ hostvars[node_name].f5_mgmt_ip }}"
+    method: GET
+    return_content: true
+    status_code: 200
+    validate_certs: false
+  register: f5os_tenant_start_gui_check
+  until: f5os_tenant_start_gui_check is success
+  retries: 40
+  delay: 30
+  delegate_to: localhost
+
+- name: Report {{ node_name }} tenant is running
+  ansible.builtin.debug:
+    msg: "Tenant '{{ f5os_tenant_name }}' is running on {{ inventory_hostname }} — BIG-IP GUI responding at {{ hostvars[node_name].f5_mgmt_ip }}"

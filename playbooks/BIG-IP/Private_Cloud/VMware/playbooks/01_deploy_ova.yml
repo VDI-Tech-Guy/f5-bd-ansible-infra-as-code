@@ -1,0 +1,23 @@
+---
+# playbooks/01_deploy_ova.yml
+# Mounts CIFS share on bastion, fetches the OVA to the EE, then deploys
+# a separate OVA-based VM directly for each BIG-IP node.
+# No template / linked-clone snapshot — each node is an independent VM.
+# Idempotent — skips OVA deploy for any VM that already exists.
+
+- name: Phase 1 — Deploy F5 OVA to vSphere
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: Deploy OVA for primary node ({{ f5_primary_node }})
+      ansible.builtin.include_role:
+        name: vmware_deploy_ova
+      vars:
+        node_name: "{{ f5_primary_node }}"
+
+    - name: Deploy OVA for secondary node ({{ f5_secondary_node }})
+      ansible.builtin.include_role:
+        name: vmware_deploy_ova
+      vars:
+        node_name: "{{ f5_secondary_node }}"

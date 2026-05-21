@@ -1,1 +1,111 @@
-Retrofit Day0 Code for VMware Here.
+# F5 BIG-IP HA Pair — VMware vSphere Deployment
+
+Deploys a two-node BIG-IP HA pair onto VMware vSphere using the
+`community.vmware` collection and F5 Declarative Onboarding (DO).
+Structured to mirror the OpenShift implementation in this repository.
+
+---
+
+## Architecture
+
+```
+Phase 0   vmware_prereqs      → creates vSphere resource pool
+Phase 1   vmware_deploy_ova   → mounts CIFS on bastion, deploys OVA per-node,
+                                 caches DO RPM on bastion
+Phase 2   f5_vm_deploy        → assigns port groups, injects mgmt IP via
+                                 vApp properties, powers on, waits for VMware Tools
+Phase 3   f5_wait_mgmt        → waits for HTTPS + iControl REST configReady
+          f5_install_do       → installs DO RPM from bastion cache (if needed)
+          f5_declarative_onboarding → POSTs DO declaration; primary first,
+                                       then secondary
+```
+
+No template / linked-clone snapshot.  Each BIG-IP node is deployed directly
+from the OVA as an independent VM — simpler and production-appropriate.
+
+---
+
+## Prerequisites
+
+| Requirement | Notes |
+|---|---|
+| AAP Execution Environment | `community.vmware`, `f5networks.f5_modules`, `ansible.utils`, `ansible.posix` |
+| AAP credential — VMware vCenter | Injects `VMWARE_HOST` / `VMWARE_USER` / `VMWARE_PASSWORD` |
+| AAP credential — Machine | Injects `ANSIBLE_NET_PASSWORD` (used for F5 admin + root) |
+| Bastion host | SSH-reachable; CIFS mount + `bigip_lx_package` RPM install delegate here |
+| CIFS / SMB share | Must contain the F5 OVA and DO RPM (filenames in extra_vars) |
+| vCenter service account | Permissions: deploy OVA, manage VMs, create resource pools |
+| vSphere port groups | Management / Internal / External / HA — set names in extra_vars |
+
+### Collections
+```
+ansible-galaxy collection install -r collections/requirements.yml
+```
+
+---
+
+## Quick Start
+
+### 1. Update `inventory/hosts.yml`
+Set the bastion `ansible_host` and per-node values for both `bigip-01` and
+`bigip-02`:
+- `f5_mgmt_ip`
+- `f5_hostname`
+- `f5_self_internal`, `f5_self_external`, `f5_self_ha`  (CIDR notation)
+
+### 2. Update `extra_vars_aap/extra_vars.yml`
+At minimum fill in:
+- `datacenter_name`, `cluster_name`, `datastore`
+- `vsphere_*_network` — port group names matching your DVS or vSwitch
+- `cifs_share`, `ova_filename`, `do_filename`
+- `f5_mgmt_prefix`, `f5_mgmt_gateway`
+- `f5_license_type` + license keys or BIG-IQ details
+- `f5_route_gateway`, `f5_float_internal`, `f5_float_external`
+- `f5_dns_servers`, `f5_ntp_servers`
+
+### 3. Create an AAP Job Template
+- **Playbook:** `playbooks/site.yml`
+- **Inventory:** `inventory/hosts.yml`
+- **Extra vars:** `extra_vars_aap/extra_vars.yml`
+- **Credentials:** VMware vCenter + Machine + Vault (if using vault vars)
+
+### 4. Run
+`site.yml` runs all phases in order.  Individual phase playbooks can be run
+standalone for re-runs or debugging.
+
+---
+
+## Teardown
+
+Run `playbooks/teardown.yml`.  Safety flags (all default `false`):
+
+| Flag | Effect |
+|---|---|
+| `delete_resource_pool: true` | Removes the vSphere resource pool |
+| `bigiq_revoke_on_teardown: true` | Revokes BIG-IQ licenses before VM deletion |
+
+The two BIG-IP VMs are always powered off and deleted (after an existence
+check) — no flag needed.
+
+---
+
+## Networking Notes
+
+- **NIC order** in deployed VM: Management (NIC0) → Internal (NIC1) → External (NIC2) → HA (NIC3)
+- **BIG-IP interface mapping:** `mgmt` → NIC0, `1.1` → NIC1, `1.2` → NIC2, `1.3` → NIC3
+- **VLAN tagging** controlled per-network via `f5_networks[].tagged` in extra_vars
+  - `tagged: false` — access/untagged port group (most common for DVS port groups)
+  - `tagged: true`  — 802.1q tagged, use when the port group carries multiple VLANs
+- **Floating IPs** use `traffic-group-1` and are created on both nodes by DO
+- **ConfigSync / Failover Unicast / Mirror** all use the HA self IP
+
+## Credential Pattern
+
+Mirrors the OpenShift implementation — no credentials are hardcoded:
+
+| Secret | Source |
+|---|---|
+| vCenter | `VMWARE_HOST` / `VMWARE_USER` / `VMWARE_PASSWORD` from AAP VMware credential |
+| F5 admin/root | `ANSIBLE_NET_PASSWORD` from AAP Machine credential |
+| CIFS | `vault_cifs_username` / `vault_cifs_password` from AAP Vault credential |
+| BIG-IQ | `vault_bigiq_username` / `vault_bigiq_password` from AAP Vault credential |

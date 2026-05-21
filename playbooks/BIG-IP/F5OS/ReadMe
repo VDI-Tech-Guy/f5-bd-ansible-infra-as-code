@@ -1,0 +1,165 @@
+# F5 BIG-IP HA Pair — F5OS (rSeries / Velos) Deployment
+
+Deploys a two-node BIG-IP HA pair as tenants on F5OS hardware using the
+`f5networks.f5os` collection and F5 Declarative Onboarding (DO).
+Structured to mirror the OpenShift and VMware implementations in this repository.
+
+---
+
+## Architecture
+
+```
+Phase 0    f5os_prereqs          → verify tenant image present, compute memory default
+Phase 1a   f5os_vlans            → create VLANs on each F5OS partition (idempotent)
+Phase 1b   f5os_interface_vlans  → associate VLANs to interfaces / LAGs
+                                    (optional — gated by f5os_interface_vlan_enabled)
+Phase 2    f5os_tenant_deploy    → create tenant in 'configured' state (per partition)
+           f5os_tenant_start     → transition to 'deployed', wait for BIG-IP GUI
+Phase 3    f5_wait_mgmt          → wait for iControl REST configReady (optional)
+           f5_install_do         → install DO RPM if not baked into image (optional)
+           f5_declarative_onboarding → POST DO declaration; primary first (optional)
+```
+
+Phase 1b is controlled by `f5os_interface_vlan_enabled` (default: `false`).  
+Phase 3 is controlled by `do_onboard_enabled` (default: `true`).  
+**Set `do_onboard_enabled: false`** if interfaces are not yet wired to VLANs —
+running DO without interface assignments will fail on the SelfIP creation step.
+
+---
+
+## rSeries vs Velos
+
+The same codebase handles both platforms. The only difference is the **mgmt-vlan**
+step in `f5os_tenant_deploy`, which calls a Velos-specific RESTCONF endpoint
+(`f5-tenant-mgmt-vlan:mgmt-vlan`). This step is automatically skipped on rSeries.
+
+Set `destination_platform: rSeries` or `destination_platform: Velos` in extra_vars.
+
+---
+
+## Tenant Image
+
+F5OS tenant image uploads are **not automated** here. Images must be present on
+the F5OS partition before this playbook runs. Upload methods:
+
+- F5OS GUI → Tenant Management → Images
+- F5OS RESTCONF API (direct HTTP PUT or from URL)
+- A separate image management playbook
+
+The `f5os_prereqs` role will fail immediately with a clear error message
+listing available images if the requested `tenant_image_version` is not found.
+
+---
+
+## Prerequisites
+
+| Requirement | Notes |
+|---|---|
+| AAP Execution Environment | `f5networks.f5os`, `f5networks.f5_modules`, `ansible.utils` |
+| AAP credential — F5 BIG-IP | Injects `ANSIBLE_NET_USERNAME` / `ANSIBLE_NET_PASSWORD` for F5OS partition auth |
+| AAP credential — Machine | Injects `ANSIBLE_NET_PASSWORD` for BIG-IP tenant admin/root |
+| F5OS partition access | Port 443 reachable from EE; credentials have tenant management rights |
+| Tenant image | BIG-IP TMOS image must already be present on each F5OS partition |
+
+### Collections
+```
+ansible-galaxy collection install -r collections/requirements.yml
+```
+
+---
+
+## Quick Start
+
+### 1. Update `inventory/hosts.yml`
+- Set `ansible_host` for each `f5os_partitions` entry (partition IPs, not chassis controller)
+- Set per-node values for `bigip-01` and `bigip-02`:
+  `f5_mgmt_ip`, `f5_hostname`, `f5_self_*`, `f5os_partition_host`
+
+### 2. Update `extra_vars_aap/extra_vars.yml`
+At minimum:
+- `destination_platform` — `rSeries` or `Velos`
+- `tenant_image_version` — build string matching an image on the partition
+- `f5_networks` — VLAN IDs and BIG-IP interface mapping
+- `f5_mgmt_prefix`, `f5_mgmt_gateway`
+- `f5_route_gateway`, `f5_float_internal`, `f5_float_external`
+- `f5_license_type` + license keys or BIG-IQ details
+- `do_onboard_enabled: false` if interfaces are not yet wired to VLANs
+
+### Optional — interface VLAN assignments
+To have the playbook wire VLANs to interfaces or LAGs, set in extra_vars:
+
+```yaml
+f5os_interface_vlan_enabled: true
+
+f5os_interface_assignments:
+  # rSeries — all VLANs on one interface
+  - name: "1.0"
+    type: interface
+    trunk_vlans: [3010, 3011, 3012]
+
+  # rSeries — separate interface per network
+  # - name: "1.0"
+  #   type: interface
+  #   trunk_vlans: [3010]
+  # - name: "2.0"
+  #   type: interface
+  #   trunk_vlans: [3011]
+  # - name: "3.0"
+  #   type: interface
+  #   trunk_vlans: [3012]
+
+  # Velos partition — blade/port format
+  # - name: "1/1.0"
+  #   type: interface
+  #   trunk_vlans: [3010, 3011, 3012]
+
+  # LAG
+  # - name: "Uplink-LAG"
+  #   type: lag
+  #   trunk_vlans: [3010, 3011, 3012]
+```
+
+### 3. Create an AAP Job Template
+- **Playbook:** `playbooks/site.yml`
+- **Inventory:** `inventory/hosts.yml`
+- **Extra vars:** `extra_vars_aap/extra_vars.yml`
+- **Credentials:** F5 BIG-IP + Machine + Vault (if using vault vars)
+
+### 4. Run
+`site.yml` runs all phases. Individual playbooks can be run standalone.
+
+---
+
+## Teardown
+
+Run `playbooks/teardown.yml`. Tenants are always deleted (no flag needed).
+
+VLANs are **never deleted by teardown** — they are partition-level shared objects
+and other tenants on the same partition may depend on them. VLAN lifecycle is
+managed separately via the F5OS GUI or a dedicated VLAN management job.
+
+Safety flags (default `false`):
+
+| Flag | Effect |
+|---|---|
+| `bigiq_revoke_on_teardown: true` | Revokes BIG-IQ licenses before tenant deletion |
+
+---
+
+## Networking Notes
+
+- **F5OS partition layer:** VLANs are created here and assigned to the tenant
+- **Interface wiring:** VLANs are associated to physical interfaces or LAGs via `f5os_interface` / `f5os_lag` modules (Phase 1b, optional). Interface name format differs by platform — `1.0` on rSeries, `blade/port` like `1/1.0` on Velos
+- **LAG rule:** assign VLANs to the LAG object only — do not also assign them to the LAG member interfaces
+- **Inside the tenant:** VLANs appear as untagged interfaces (1.1, 1.2, 1.3) — DO declaration uses `"tagged": false` on all VLANs
+- **VLANs are never deleted by teardown** — they are shared partition objects
+- **HA:** ConfigSync, FailoverUnicast, and Mirror all use the HA self IP
+- **`do_onboard_enabled: false`** skips Phase 3 entirely — use this when interface-to-VLAN wiring isn't in place yet, as DO will fail on SelfIP creation without it
+
+## Credential Pattern
+
+| Secret | Source |
+|---|---|
+| F5OS partition | `ANSIBLE_NET_USERNAME` / `ANSIBLE_NET_PASSWORD` from AAP F5 BIG-IP credential |
+| BIG-IP tenant admin/root | `ANSIBLE_NET_PASSWORD` from AAP Machine credential |
+| BIG-IQ | `vault_bigiq_username` / `vault_bigiq_password` from AAP Vault credential |

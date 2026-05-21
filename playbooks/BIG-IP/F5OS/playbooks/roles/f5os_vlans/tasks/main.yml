@@ -1,0 +1,24 @@
+---
+# Role: f5os_vlans
+# Creates VLANs on the F5OS partition using the f5_networks list from extra_vars.
+# Naming convention matches the proven modernization code: vl<VLAN_ID>
+# (e.g. vl3010, vl3011, vl3012).
+# Idempotent — f5os_vlan state: present is a no-op for existing VLANs.
+# Runs against f5os_partitions (httpapi connection).
+
+- name: Create VLANs on F5OS partition {{ inventory_hostname }}
+  f5networks.f5os.f5os_vlan:
+    name: "vl{{ item.vlan_id }}"
+    vlan_id: "{{ item.vlan_id }}"
+    state: present
+  loop: "{{ f5_networks }}"
+  loop_control:
+    label: "vl{{ item.vlan_id }} ({{ item.name }})"
+
+- name: Build VLAN ID list for tenant assignment
+  ansible.builtin.set_fact:
+    f5os_vlan_id_list: "{{ f5_networks | map(attribute='vlan_id') | list }}"
+
+- name: Report VLANs created on {{ inventory_hostname }}
+  ansible.builtin.debug:
+    msg: "VLANs present on {{ inventory_hostname }}: {{ f5os_vlan_id_list }}"

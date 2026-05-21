@@ -1,0 +1,17 @@
+---
+# site.yml — master playbook
+# Runs all phases in order.
+# In AAP, create a Job Template pointing at this playbook.
+# Individual playbooks can also be run standalone for re-runs / debugging.
+
+- name: Phase 0 — VMware prerequisites (resource pool)
+  ansible.builtin.import_playbook: 00_vmware_prereqs.yml
+
+- name: Phase 1 — Deploy F5 OVA to vSphere
+  ansible.builtin.import_playbook: 01_deploy_ova.yml
+
+- name: Phase 2 — Configure VMs (port groups, mgmt IP, power on)
+  ansible.builtin.import_playbook: 02_deploy_vm.yml
+
+- name: Phase 3 — Declarative Onboarding
+  ansible.builtin.import_playbook: 03_onboard.yml

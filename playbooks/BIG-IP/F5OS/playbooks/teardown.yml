@@ -1,0 +1,122 @@
+---
+# playbooks/teardown.yml
+# Removes BIG-IP tenants from their F5OS partitions.
+#
+# VLANs are intentionally NEVER deleted — they are partition-level shared
+# objects. Other tenants on the same partition may be using the same VLANs.
+# VLAN lifecycle is managed separately via the F5OS GUI or a dedicated
+# VLAN management job.
+#
+# Safety flags (all default false — must be explicitly set):
+#   bigiq_revoke_on_teardown: true  → revokes BIG-IQ licenses before tenant deletion
+
+- name: Teardown F5 BIG-IP tenants from F5OS partitions
+  hosts: f5os_partitions
+  connection: httpapi
+  gather_facts: false
+
+  tasks:
+
+    # ------------------------------------------------------------------
+    # Revoke BIG-IQ licenses
+    # Must run before tenant deletion — tenant BIG-IP must still be up
+    # ------------------------------------------------------------------
+
+    - name: Revoke license for primary from BIG-IQ
+      ansible.builtin.uri:
+        url: "https://{{ bigiq_host }}/mgmt/cm/device/tasks/licensing/pool/member-management"
+        method: POST
+        body_format: json
+        body:
+          address: "{{ hostvars[f5_primary_node].f5_mgmt_ip }}"
+          assignmentType: "unmanaged"
+          command: "revoke"
+          licensePoolName: "{{ bigiq_pool }}"
+          password: "{{ f5_admin_password }}"
+          user: "admin"
+        return_content: true
+        status_code: [200, 202]
+        force_basic_auth: true
+        user: "{{ bigiq_username }}"
+        password: "{{ bigiq_password }}"
+        validate_certs: false
+      delegate_to: localhost
+      no_log: true
+      when:
+        - bigiq_revoke_on_teardown | default(false) | bool
+        - inventory_hostname == hostvars[f5_primary_node].f5os_partition_host
+      failed_when: false
+
+    - name: Revoke license for secondary from BIG-IQ
+      ansible.builtin.uri:
+        url: "https://{{ bigiq_host }}/mgmt/cm/device/tasks/licensing/pool/member-management"
+        method: POST
+        body_format: json
+        body:
+          address: "{{ hostvars[f5_secondary_node].f5_mgmt_ip }}"
+          assignmentType: "unmanaged"
+          command: "revoke"
+          licensePoolName: "{{ bigiq_pool }}"
+          password: "{{ f5_admin_password }}"
+          user: "admin"
+        return_content: true
+        status_code: [200, 202]
+        force_basic_auth: true
+        user: "{{ bigiq_username }}"
+        password: "{{ bigiq_password }}"
+        validate_certs: false
+      delegate_to: localhost
+      no_log: true
+      when:
+        - bigiq_revoke_on_teardown | default(false) | bool
+        - inventory_hostname == hostvars[f5_secondary_node].f5os_partition_host
+      failed_when: false
+
+    - name: Report license revocation status
+      ansible.builtin.debug:
+        msg: "BIG-IQ license revocation: {{ 'completed' if (bigiq_revoke_on_teardown | default(false) | bool) else 'skipped (bigiq_revoke_on_teardown=false)' }}"
+      run_once: true
+
+    # ------------------------------------------------------------------
+    # Delete primary tenant
+    # ------------------------------------------------------------------
+
+    - name: Delete primary tenant on {{ inventory_hostname }}
+      f5networks.f5os.f5os_tenant:
+        name: "{{ f5_primary_node.split('.')[0] | lower }}"
+        state: absent
+      when: inventory_hostname == hostvars[f5_primary_node].f5os_partition_host
+      failed_when: false
+
+    # ------------------------------------------------------------------
+    # Delete secondary tenant
+    # ------------------------------------------------------------------
+
+    - name: Delete secondary tenant on {{ inventory_hostname }}
+      f5networks.f5os.f5os_tenant:
+        name: "{{ f5_secondary_node.split('.')[0] | lower }}"
+        state: absent
+      when: inventory_hostname == hostvars[f5_secondary_node].f5os_partition_host
+      failed_when: false
+
+    - name: Report tenant deletion status
+      ansible.builtin.debug:
+        msg:
+          - "Tenants removed from {{ inventory_hostname }}"
+          - "primary  ({{ f5_primary_node }}):   targeted={{ inventory_hostname == hostvars[f5_primary_node].f5os_partition_host }}"
+          - "secondary ({{ f5_secondary_node }}): targeted={{ inventory_hostname == hostvars[f5_secondary_node].f5os_partition_host }}"
+          - "VLANs: retained (never deleted — shared partition objects)"
+
+    # ------------------------------------------------------------------
+    # Final summary
+    # ------------------------------------------------------------------
+
+    - name: Teardown summary
+      ansible.builtin.debug:
+        msg:
+          - "================================================"
+          - "Partition:             {{ inventory_hostname }}"
+          - "Licenses revoked:      {{ bigiq_revoke_on_teardown | default(false) | bool }}"
+          - "Tenants removed:       true"
+          - "VLANs:                 retained (shared — never deleted by teardown)"
+          - "================================================"

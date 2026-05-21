@@ -1,0 +1,49 @@
+---
+# Role: f5os_prereqs
+# Runs against f5os_partitions (httpapi connection).
+# 1. Queries the partition for available tenant images.
+# 2. Matches tenant_image_version against the image list — fails fast
+#    with a clear message if the image is missing.
+# 3. Stores the matched image name as f5os_tenant_image for downstream roles.
+# 4. Computes tenant_memory if not explicitly overridden (same formula
+#    as the proven modernization code: (3.5 * 1024 * cpu) + 512).
+#
+# Image uploads are intentionally out of scope — F5OS tenant images
+# are sourced from URLs or must already exist on the device.
+
+- name: Gather tenant images from F5OS partition
+  f5networks.f5os.f5os_device_info:
+    gather_subset:
+      - tenant-images
+  register: f5os_prereqs_device_info
+
+- name: Match requested image version to available images
+  ansible.builtin.set_fact:
+    f5os_tenant_image: "{{ item.name }}"
+  loop: "{{ f5os_prereqs_device_info.tenant_images }}"
+  when: tenant_image_version in item.name
+
+- name: Fail if requested image is not present on {{ inventory_hostname }}
+  ansible.builtin.fail:
+    msg: >
+      Tenant image matching '{{ tenant_image_version }}' was not found on
+      {{ inventory_hostname }}. Available images:
+      {{ f5os_prereqs_device_info.tenant_images | map(attribute='name') | list }}.
+      Upload the image via the F5OS GUI or API before running this playbook.
+  when: f5os_tenant_image is not defined
+
+- name: Set computed memory if not explicitly overridden
+  ansible.builtin.set_fact:
+    tenant_memory: "{{ ((3.5 * 1024 * (tenant_cpu_cores | int)) + 512) | int }}"
+  when: tenant_memory is not defined
+
+- name: Report prereqs complete for {{ inventory_hostname }}
+  ansible.builtin.debug:
+    msg:
+      - "Partition:    {{ inventory_hostname }}"
+      - "Image:        {{ f5os_tenant_image }}"
+      - "CPU cores:    {{ tenant_cpu_cores }}"
+      - "Memory (MB):  {{ tenant_memory }}"
+      - "Disk (GB):    {{ tenant_disk_size }}"
+      - "Nodes:        {{ tenant_nodes }}"
+      - "Cryptos:      {{ tenant_cryptos }}"

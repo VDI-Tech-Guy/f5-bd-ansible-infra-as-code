@@ -1,0 +1,153 @@
+---
+# ============================================================
+# vCenter / vSphere
+# ============================================================
+# vcenter_hostname, vcenter_username, vcenter_password are NOT set here.
+# AAP injects them via the "VMware vCenter" credential type as env vars:
+#   VMWARE_HOST      → vCenter hostname / IP
+#   VMWARE_USER      → vCenter username
+#   VMWARE_PASSWORD  → vCenter password
+#
+# community.vmware modules accept these via the hostname/username/password
+# params — roles reference them as:
+#   vcenter_hostname: "{{ lookup('env', 'VMWARE_HOST') }}"
+#   vcenter_username: "{{ lookup('env', 'VMWARE_USER') }}"
+#   vcenter_password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"
+
+vcenter_validate_certs: false
+
+# vSphere placement
+datacenter_name: "My-Datacenter"      # vCenter datacenter name
+cluster_name: "My-Cluster"            # vSphere cluster to deploy into
+datastore: "My-Datastore"             # datastore for VM disks
+
+# vSphere resource pool — created by playbook, VMs land here
+resource_pool_name: "F5-BIG-IP"
+
+# ============================================================
+# vSphere networking
+# ============================================================
+# Port group names on your DVS or vSwitch.
+# For a DVS use the port group name as it appears in vCenter.
+# For a standard vSwitch use the port group label.
+vsphere_mgmt_network: "DVS-Mgmt-vLan"
+vsphere_internal_network: "DVS-Internal-vLan"
+vsphere_external_network: "DVS-External-vLan"
+vsphere_ha_network: "DVS-HA-vLan"
+
+# ============================================================
+# CIFS share (OVA + DO RPM, mount delegated to bastion)
+# ============================================================
+cifs_share: "//fileserver.yourdomain.local/images"
+cifs_mountpoint: "/mnt/f5images"
+cifs_username: "{{ vault_cifs_username }}"
+cifs_password: "{{ vault_cifs_password }}"
+cifs_domain: "YOURDOMAIN"
+
+# OVA filename on the CIFS share
+ova_filename: "BIGIP-17.5.1.5-0.0.6.ALL-vmware.ova"
+
+# OVA deployment option (sets vCPU/RAM profile baked into the OVA)
+# Common values: llthreecpu  quadcpu  tencpu
+ova_deployment_option: "quadcpu"
+
+# VM display-name prefix in vCenter — each node appended: <prefix>-bigip-01
+vm_name_prefix: "F5-BIG-IP"
+
+# ============================================================
+# Management network (applied via vApp properties at first boot)
+# ============================================================
+f5_mgmt_prefix: "24"
+f5_mgmt_gateway: "10.30.14.1"
+
+# ============================================================
+# F5 BIG-IP network — VLANs and interface mapping
+# ============================================================
+# NIC order in the deployed VM must match this list exactly.
+# NIC 0 = mgmt (wired to vsphere_mgmt_network above)
+# NIC 1 = internal  → BIG-IP interface 1.1
+# NIC 2 = external  → BIG-IP interface 1.2
+# NIC 3 = ha        → BIG-IP interface 1.3
+#
+# tagged: true  → BIG-IP VLAN uses 802.1q tagging on that interface
+# tagged: false → untagged/access-mode port group (most common for DVS)
+
+f5_networks:
+  - name: internal
+    vlan_id: 3010
+    bigip_iface: "1.1"
+    tagged: false
+  - name: external
+    vlan_id: 3011
+    bigip_iface: "1.2"
+    tagged: false
+  - name: ha
+    vlan_id: 3012
+    bigip_iface: "1.3"
+    tagged: false
+
+# Floating (shared) self IPs — traffic-group-1, active/standby failover
+f5_float_internal: "10.30.10.10/24"
+f5_float_external: "10.30.11.10/24"
+
+# Default route gateway (typically on the external network)
+f5_route_gateway: "10.30.11.1"
+
+# ============================================================
+# DNS / NTP / Timezone
+# ============================================================
+f5_dns_servers:
+  - "192.168.10.10"
+  - "192.168.10.11"
+f5_dns_search:
+  - "yourdomain.local"
+f5_ntp_servers:
+  - "192.168.10.20"
+  - "pool.ntp.org"
+f5_timezone: "America/New_York"
+
+# ============================================================
+# F5 module provisioning
+# ============================================================
+f5_modules:
+  - ltm
+  - apm
+
+# ============================================================
+# F5 credentials
+# ============================================================
+# Injected at runtime via AAP Machine credential env var
+f5_admin_password: "{{ lookup('env', 'ANSIBLE_NET_PASSWORD') }}"
+f5_root_password:  "{{ lookup('env', 'ANSIBLE_NET_PASSWORD') }}"
+
+# ============================================================
+# F5 licensing  (f5_license_type: regkey  or  bigiq)
+# ============================================================
+f5_license_type: regkey
+
+# regKey — one key per node
+f5_license_key_node1: "XXXXX-XXXXX-XXXXX-XXXXX-XXXXXXX"
+f5_license_key_node2: "XXXXX-XXXXX-XXXXX-XXXXX-XXXXXXX"
+
+# BIG-IQ pool licensing (used when f5_license_type: bigiq)
+bigiq_host: "192.168.1.100"
+bigiq_username: "{{ vault_bigiq_username }}"
+bigiq_password: "{{ vault_bigiq_password }}"
+bigiq_pool: "bigiq_pool_name"
+
+# ============================================================
+# Declarative Onboarding
+# ============================================================
+do_rpm_install_from_cifs: true     # false if DO RPM is already baked into the OVA image
+do_filename: "f5-declarative-onboarding-1.48.0-3.noarch.rpm"
+bastion_f5_cache: "/opt/f5/cache"  # persistent cache directory on bastion
+
+do_poll_interval: 30    # seconds between DO status polls
+do_poll_retries: 40     # max polls (~20 min total)
+
+# ============================================================
+# HA
+# ============================================================
+f5_ha_enabled: true
+f5_primary_node: "bigip-01"
+f5_secondary_node: "bigip-02"

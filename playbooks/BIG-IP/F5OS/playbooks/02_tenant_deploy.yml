@@ -1,0 +1,49 @@
+---
+# playbooks/02_tenant_deploy.yml
+# Deploys the BIG-IP tenant in 'configured' state on each F5OS partition,
+# then transitions it to 'deployed' (running) and waits for the management
+# GUI to respond.
+#
+# Primary node is deployed and started first. This matches the approach from
+# the proven modernization code and ensures the primary is reachable before
+# the secondary attempts HA trust during onboarding.
+
+- name: Phase 2a — Deploy BIG-IP tenants (configured state)
+  hosts: f5os_partitions
+  connection: httpapi
+  gather_facts: false
+
+  tasks:
+    - name: Deploy primary tenant on {{ inventory_hostname }}
+      ansible.builtin.include_role:
+        name: f5os_tenant_deploy
+      vars:
+        node_name: "{{ f5_primary_node }}"
+      when: inventory_hostname == hostvars[f5_primary_node].f5os_partition_host
+
+    - name: Deploy secondary tenant on {{ inventory_hostname }}
+      ansible.builtin.include_role:
+        name: f5os_tenant_deploy
+      vars:
+        node_name: "{{ f5_secondary_node }}"
+      when: inventory_hostname == hostvars[f5_secondary_node].f5os_partition_host
+
+- name: Phase 2b — Start BIG-IP tenants and wait for management GUI
+  hosts: f5os_partitions
+  connection: httpapi
+  gather_facts: false
+
+  tasks:
+    - name: Start primary tenant on {{ inventory_hostname }}
+      ansible.builtin.include_role:
+        name: f5os_tenant_start
+      vars:
+        node_name: "{{ f5_primary_node }}"
+      when: inventory_hostname == hostvars[f5_primary_node].f5os_partition_host
+
+    - name: Start secondary tenant on {{ inventory_hostname }}
+      ansible.builtin.include_role:
+        name: f5os_tenant_start
+      vars:
+        node_name: "{{ f5_secondary_node }}"
+      when: inventory_hostname == hostvars[f5_secondary_node].f5os_partition_host

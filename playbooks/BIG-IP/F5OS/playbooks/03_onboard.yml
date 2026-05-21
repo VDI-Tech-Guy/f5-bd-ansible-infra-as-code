@@ -1,0 +1,76 @@
+---
+# playbooks/03_onboard.yml
+# Optional — gated by do_onboard_enabled (default: true in extra_vars).
+# Skip this phase by setting do_onboard_enabled: false when interface-to-VLAN
+# assignments are not yet in place on the F5OS device. Running DO without
+# interfaces assigned to VLANs will cause SelfIP creation to fail.
+#
+# Structure mirrors OpenShift 04_onboard.yml exactly:
+#   wait → install DO (if needed) → onboard primary → onboard secondary
+
+- name: Wait for both BIG-IP tenant nodes to be ready
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: Skip onboarding phase — do_onboard_enabled is false
+      ansible.builtin.debug:
+        msg: "do_onboard_enabled=false — skipping all onboarding tasks"
+      when: not (do_onboard_enabled | default(true) | bool)
+
+    - name: Wait for primary management interface
+      ansible.builtin.include_role:
+        name: f5_wait_mgmt
+      vars:
+        node_name: "{{ f5_primary_node }}"
+      when: do_onboard_enabled | default(true) | bool
+
+    - name: Wait for secondary management interface
+      ansible.builtin.include_role:
+        name: f5_wait_mgmt
+      vars:
+        node_name: "{{ f5_secondary_node }}"
+      when: do_onboard_enabled | default(true) | bool
+
+- name: Install DO RPM on both nodes (if needed)
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: Install DO on primary
+      ansible.builtin.include_role:
+        name: f5_install_do
+      vars:
+        node_name: "{{ f5_primary_node }}"
+      when: do_onboard_enabled | default(true) | bool
+
+    - name: Install DO on secondary
+      ansible.builtin.include_role:
+        name: f5_install_do
+      vars:
+        node_name: "{{ f5_secondary_node }}"
+      when: do_onboard_enabled | default(true) | bool
+
+- name: Onboard primary node first
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: Run Declarative Onboarding on primary
+      ansible.builtin.include_role:
+        name: f5_declarative_onboarding
+      vars:
+        node_name: "{{ f5_primary_node }}"
+      when: do_onboard_enabled | default(true) | bool
+
+- name: Onboard secondary node after primary completes
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: Run Declarative Onboarding on secondary
+      ansible.builtin.include_role:
+        name: f5_declarative_onboarding
+      vars:
+        node_name: "{{ f5_secondary_node }}"
+      when: do_onboard_enabled | default(true) | bool

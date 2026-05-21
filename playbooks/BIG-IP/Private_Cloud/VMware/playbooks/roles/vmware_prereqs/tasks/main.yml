@@ -1,0 +1,20 @@
+---
+# Role: vmware_prereqs
+# Creates the vSphere resource pool that will hold both BIG-IP VMs.
+# Idempotent — state: present is a no-op if the pool already exists.
+
+- name: Create vSphere resource pool for F5 BIG-IP VMs
+  community.vmware.vmware_resource_pool:
+    hostname: "{{ lookup('env', 'VMWARE_HOST') }}"
+    username: "{{ lookup('env', 'VMWARE_USER') }}"
+    password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    datacenter: "{{ datacenter_name }}"
+    cluster: "{{ cluster_name }}"
+    resource_pool: "{{ resource_pool_name }}"
+    state: present
+  delegate_to: localhost
+
+- name: Report resource pool ready
+  ansible.builtin.debug:
+    msg: "Resource pool '{{ resource_pool_name }}' is present in cluster '{{ cluster_name }}'"

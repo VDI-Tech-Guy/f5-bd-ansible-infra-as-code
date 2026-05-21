@@ -1,0 +1,22 @@
+---
+# playbooks/02_deploy_vm.yml
+# Assigns correct vSphere port groups to each VM, injects the management
+# IP / gateway / credentials via vApp properties, and powers on the VMs.
+# Mirrors the pattern from the OCP 03_deploy_vm.yml — primary first, then secondary.
+
+- name: Phase 2 — Configure and power on F5 BIG-IP VMs
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: Configure and power on primary node ({{ f5_primary_node }})
+      ansible.builtin.include_role:
+        name: f5_vm_deploy
+      vars:
+        node_name: "{{ f5_primary_node }}"
+
+    - name: Configure and power on secondary node ({{ f5_secondary_node }})
+      ansible.builtin.include_role:
+        name: f5_vm_deploy
+      vars:
+        node_name: "{{ f5_secondary_node }}"

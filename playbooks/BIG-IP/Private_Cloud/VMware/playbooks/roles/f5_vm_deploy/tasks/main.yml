@@ -1,0 +1,98 @@
+---
+# Role: f5_vm_deploy
+# Assigns vSphere port groups, injects management IP/GW/credentials via
+# vApp properties, powers on the VM, and waits for VMware Tools to confirm boot.
+# vApp properties are the same mechanism used by the proven day0 code
+# (net.mgmt.addr / net.mgmt.gw / user.root.pwd / user.admin.pwd).
+#
+# Call with: vars: { node_name: "bigip-01" }
+
+- name: Set VM name fact for {{ node_name }}
+  ansible.builtin.set_fact:
+    f5_vm_name: "{{ vm_name_prefix }}-{{ node_name }}"
+
+# ------------------------------------------------------------------
+# Assign correct port groups
+# The OVA maps networks by label (Management / Internal / External / HA).
+# Re-applying here ensures the correct DVS / vSwitch port groups are used
+# and normalises any port group drift from the OVA default mapping.
+# ------------------------------------------------------------------
+
+- name: Assign vSphere port groups for {{ f5_vm_name }}
+  community.vmware.vmware_guest:
+    hostname: "{{ lookup('env', 'VMWARE_HOST') }}"
+    username: "{{ lookup('env', 'VMWARE_USER') }}"
+    password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    datacenter: "{{ datacenter_name }}"
+    name: "{{ f5_vm_name }}"
+    networks:
+      - name: "{{ vsphere_mgmt_network }}"
+      - name: "{{ vsphere_internal_network }}"
+      - name: "{{ vsphere_external_network }}"
+      - name: "{{ vsphere_ha_network }}"
+  delegate_to: localhost
+
+# ------------------------------------------------------------------
+# Inject management IP, gateway, and credentials via vApp properties.
+# BIG-IP OVA exposes these standard property IDs — same approach
+# used by the working day0 code (guest_cust.yml).
+# ------------------------------------------------------------------
+
+- name: Set management IP and credentials via vApp properties for {{ f5_vm_name }}
+  community.vmware.vmware_guest:
+    hostname: "{{ lookup('env', 'VMWARE_HOST') }}"
+    username: "{{ lookup('env', 'VMWARE_USER') }}"
+    password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    datacenter: "{{ datacenter_name }}"
+    name: "{{ f5_vm_name }}"
+    state: present
+    vapp_properties:
+      - id: net.mgmt.addr
+        type: string
+        value: "{{ hostvars[node_name].f5_mgmt_ip }}/{{ f5_mgmt_prefix }}"
+      - id: net.mgmt.gw
+        type: string
+        value: "{{ f5_mgmt_gateway }}"
+      - id: user.root.pwd
+        type: password
+        value: "{{ f5_root_password }}"
+      - id: user.admin.pwd
+        type: password
+        value: "{{ f5_admin_password }}"
+  delegate_to: localhost
+  no_log: true
+
+# ------------------------------------------------------------------
+# Power on
+# ------------------------------------------------------------------
+
+- name: Power on {{ f5_vm_name }}
+  community.vmware.vmware_guest_powerstate:
+    hostname: "{{ lookup('env', 'VMWARE_HOST') }}"
+    username: "{{ lookup('env', 'VMWARE_USER') }}"
+    password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    name: "{{ f5_vm_name }}"
+    state: powered-on
+  delegate_to: localhost
+
+# ------------------------------------------------------------------
+# Wait for VMware Tools — confirms VM has booted far enough for TMOS
+# to have started. Mirrors day0 vmware_tools_wait role.
+# ------------------------------------------------------------------
+
+- name: Wait for VMware Tools to become available on {{ f5_vm_name }}
+  community.vmware.vmware_guest_tools_wait:
+    hostname: "{{ lookup('env', 'VMWARE_HOST') }}"
+    username: "{{ lookup('env', 'VMWARE_USER') }}"
+    password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    name: "{{ f5_vm_name }}"
+  delegate_to: localhost
+  register: vm_tools_facts
+
+- name: Report {{ node_name }} VM is booted
+  ansible.builtin.debug:
+    msg: "VM '{{ f5_vm_name }}' is powered on and VMware Tools are available (mgmt IP: {{ hostvars[node_name].f5_mgmt_ip }})"

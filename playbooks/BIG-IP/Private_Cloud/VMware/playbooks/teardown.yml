@@ -1,0 +1,194 @@
+---
+# playbooks/teardown.yml
+# Removes all F5 BIG-IP resources from vSphere in reverse order.
+# Safe to run at any stage — checks existence before every delete
+# so it skips gracefully if a resource was never created.
+# Structure mirrors OpenShift teardown.yml.
+#
+# Safety flags (all default false — must be explicitly set):
+#   delete_resource_pool: true        → removes the vSphere resource pool after VMs are gone
+#   bigiq_revoke_on_teardown: true    → revokes BIG-IQ licenses before VM deletion
+
+- name: Teardown F5 BIG-IP deployment from vSphere
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+
+    # ------------------------------------------------------------------
+    # Revoke BIG-IQ licenses
+    # Must run before VM deletion — BIG-IP must still be reachable
+    # ------------------------------------------------------------------
+
+    - name: Revoke license for primary from BIG-IQ
+      ansible.builtin.uri:
+        url: "https://{{ bigiq_host }}/mgmt/cm/device/tasks/licensing/pool/member-management"
+        method: POST
+        body_format: json
+        body:
+          address: "{{ hostvars[f5_primary_node].f5_mgmt_ip }}"
+          assignmentType: "unmanaged"
+          command: "revoke"
+          licensePoolName: "{{ bigiq_pool }}"
+          password: "{{ f5_admin_password }}"
+          user: "admin"
+        return_content: true
+        status_code: [200, 202]
+        force_basic_auth: true
+        user: "{{ bigiq_username }}"
+        password: "{{ bigiq_password }}"
+        validate_certs: false
+      delegate_to: localhost
+      no_log: true
+      when: bigiq_revoke_on_teardown | default(false) | bool
+      failed_when: false
+
+    - name: Revoke license for secondary from BIG-IQ
+      ansible.builtin.uri:
+        url: "https://{{ bigiq_host }}/mgmt/cm/device/tasks/licensing/pool/member-management"
+        method: POST
+        body_format: json
+        body:
+          address: "{{ hostvars[f5_secondary_node].f5_mgmt_ip }}"
+          assignmentType: "unmanaged"
+          command: "revoke"
+          licensePoolName: "{{ bigiq_pool }}"
+          password: "{{ f5_admin_password }}"
+          user: "admin"
+        return_content: true
+        status_code: [200, 202]
+        force_basic_auth: true
+        user: "{{ bigiq_username }}"
+        password: "{{ bigiq_password }}"
+        validate_certs: false
+      delegate_to: localhost
+      no_log: true
+      when: bigiq_revoke_on_teardown | default(false) | bool
+      failed_when: false
+
+    - name: Report license revocation status
+      ansible.builtin.debug:
+        msg: "BIG-IQ license revocation: {{ 'completed' if (bigiq_revoke_on_teardown | default(false) | bool) else 'skipped (bigiq_revoke_on_teardown=false)' }}"
+
+    # ------------------------------------------------------------------
+    # Power off and delete primary VM
+    # ------------------------------------------------------------------
+
+    - name: Check if primary VM exists
+      community.vmware.vmware_guest_info:
+        hostname: "{{ lookup('env', 'VMWARE_HOST') }}"
+        username: "{{ lookup('env', 'VMWARE_USER') }}"
+        password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"
+        validate_certs: "{{ vcenter_validate_certs }}"
+        datacenter: "{{ datacenter_name }}"
+        name: "{{ vm_name_prefix }}-{{ f5_primary_node }}"
+      register: vm_primary_check
+      failed_when: false
+
+    - name: Power off primary VM (forced)
+      community.vmware.vmware_guest:
+        hostname: "{{ lookup('env', 'VMWARE_HOST') }}"
+        username: "{{ lookup('env', 'VMWARE_USER') }}"
+        password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"
+        validate_certs: "{{ vcenter_validate_certs }}"
+        datacenter: "{{ datacenter_name }}"
+        name: "{{ vm_name_prefix }}-{{ f5_primary_node }}"
+        state: poweredoff
+        force: true
+      when: vm_primary_check.instance is defined
+      failed_when: false
+      delegate_to: localhost
+
+    - name: Delete primary VM
+      community.vmware.vmware_guest:
+        hostname: "{{ lookup('env', 'VMWARE_HOST') }}"
+        username: "{{ lookup('env', 'VMWARE_USER') }}"
+        password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"
+        validate_certs: "{{ vcenter_validate_certs }}"
+        datacenter: "{{ datacenter_name }}"
+        name: "{{ vm_name_prefix }}-{{ f5_primary_node }}"
+        state: absent
+      when: vm_primary_check.instance is defined
+      delegate_to: localhost
+
+    # ------------------------------------------------------------------
+    # Power off and delete secondary VM
+    # ------------------------------------------------------------------
+
+    - name: Check if secondary VM exists
+      community.vmware.vmware_guest_info:
+        hostname: "{{ lookup('env', 'VMWARE_HOST') }}"
+        username: "{{ lookup('env', 'VMWARE_USER') }}"
+        password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"
+        validate_certs: "{{ vcenter_validate_certs }}"
+        datacenter: "{{ datacenter_name }}"
+        name: "{{ vm_name_prefix }}-{{ f5_secondary_node }}"
+      register: vm_secondary_check
+      failed_when: false
+
+    - name: Power off secondary VM (forced)
+      community.vmware.vmware_guest:
+        hostname: "{{ lookup('env', 'VMWARE_HOST') }}"
+        username: "{{ lookup('env', 'VMWARE_USER') }}"
+        password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"
+        validate_certs: "{{ vcenter_validate_certs }}"
+        datacenter: "{{ datacenter_name }}"
+        name: "{{ vm_name_prefix }}-{{ f5_secondary_node }}"
+        state: poweredoff
+        force: true
+      when: vm_secondary_check.instance is defined
+      failed_when: false
+      delegate_to: localhost
+
+    - name: Delete secondary VM
+      community.vmware.vmware_guest:
+        hostname: "{{ lookup('env', 'VMWARE_HOST') }}"
+        username: "{{ lookup('env', 'VMWARE_USER') }}"
+        password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"
+        validate_certs: "{{ vcenter_validate_certs }}"
+        datacenter: "{{ datacenter_name }}"
+        name: "{{ vm_name_prefix }}-{{ f5_secondary_node }}"
+        state: absent
+      when: vm_secondary_check.instance is defined
+      delegate_to: localhost
+
+    - name: Report VM deletion status
+      ansible.builtin.debug:
+        msg:
+          - "primary ({{ vm_name_prefix }}-{{ f5_primary_node }}):   {{ 'deleted' if vm_primary_check.instance is defined else 'not found — skipped' }}"
+          - "secondary ({{ vm_name_prefix }}-{{ f5_secondary_node }}): {{ 'deleted' if vm_secondary_check.instance is defined else 'not found — skipped' }}"
+
+    # ------------------------------------------------------------------
+    # Resource pool
+    # ------------------------------------------------------------------
+
+    - name: Remove vSphere resource pool
+      community.vmware.vmware_resource_pool:
+        hostname: "{{ lookup('env', 'VMWARE_HOST') }}"
+        username: "{{ lookup('env', 'VMWARE_USER') }}"
+        password: "{{ lookup('env', 'VMWARE_PASSWORD') }}"
+        validate_certs: "{{ vcenter_validate_certs }}"
+        datacenter: "{{ datacenter_name }}"
+        cluster: "{{ cluster_name }}"
+        resource_pool: "{{ resource_pool_name }}"
+        state: absent
+      when: delete_resource_pool | default(false) | bool
+      delegate_to: localhost
+
+    - name: Report resource pool status
+      ansible.builtin.debug:
+        msg: "Resource pool '{{ resource_pool_name }}': {{ 'deleted' if (delete_resource_pool | default(false) | bool) else 'retained (delete_resource_pool=false)' }}"
+
+    # ------------------------------------------------------------------
+    # Final summary
+    # ------------------------------------------------------------------
+
+    - name: Teardown summary
+      ansible.builtin.debug:
+        msg:
+          - "================================================"
+          - "Licenses revoked:      {{ bigiq_revoke_on_teardown | default(false) | bool }}"
+          - "Primary VM removed:    {{ vm_primary_check.instance is defined }}"
+          - "Secondary VM removed:  {{ vm_secondary_check.instance is defined }}"
+          - "Resource pool removed: {{ delete_resource_pool | default(false) | bool }}"
+          - "================================================"

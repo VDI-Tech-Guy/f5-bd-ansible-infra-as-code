@@ -1,0 +1,12 @@
+---
+# playbooks/01_image_upload.yml
+# Mounts CIFS share on bastion, deploys the F5 OVA to vCenter as a
+# template VM, shuts it down, and takes the linked-clone snapshot.
+# Idempotent — checks for existing template and snapshot before acting.
+# The template VM persists between deployments; only re-runs if missing.
+
+- name: Phase 1 — Upload F5 OVA and prepare linked-clone template
+  hosts: localhost
+  gather_facts: false
+  roles:
+    - role: vmware_image_upload

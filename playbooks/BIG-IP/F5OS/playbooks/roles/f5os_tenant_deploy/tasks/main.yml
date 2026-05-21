@@ -1,0 +1,68 @@
+---
+# Role: f5os_tenant_deploy
+# Creates the BIG-IP tenant on an F5OS partition in 'configured' state.
+# Tenant name is derived from the node_name inventory hostname (first label,
+# lowercased) — matches the convention used in the modernization code.
+#
+# rSeries vs Velos nuance:
+#   Both use the same f5os_tenant module parameters.
+#   The mgmt-vlan step (Velos-only API endpoint) is applied only when
+#   destination_platform == 'Velos' AND f5_mgmt_vlan is defined.
+#   This is taken directly from the proven standalone create_f5_os_tenant role.
+#
+# Call with: vars: { node_name: "bigip-01" }
+
+- name: Set tenant name for {{ node_name }}
+  ansible.builtin.set_fact:
+    f5os_tenant_name: "{{ node_name.split('.')[0] | lower }}"
+
+- name: Rebuild VLAN ID list (in case role is called before f5os_vlans)
+  ansible.builtin.set_fact:
+    f5os_vlan_id_list: "{{ f5_networks | map(attribute='vlan_id') | list }}"
+
+- name: Deploy tenant {{ f5os_tenant_name }} on {{ inventory_hostname }} (configured state)
+  f5networks.f5os.f5os_tenant:
+    name: "{{ f5os_tenant_name }}"
+    image_name: "{{ f5os_tenant_image }}"
+    nodes: "{{ tenant_nodes }}"
+    mgmt_ip: "{{ hostvars[node_name].f5_mgmt_ip }}"
+    mgmt_prefix: "{{ f5_mgmt_prefix }}"
+    mgmt_gateway: "{{ f5_mgmt_gateway }}"
+    vlans: "{{ f5os_vlan_id_list }}"
+    cpu_cores: "{{ tenant_cpu_cores }}"
+    memory: "{{ tenant_memory }}"
+    cryptos: "{{ tenant_cryptos }}"
+    virtual_disk_size: "{{ tenant_disk_size }}"
+    running_state: configured
+
+# ------------------------------------------------------------------
+# Velos-only: set mgmt-vlan via direct REST call.
+# This API endpoint does not exist on rSeries (at least pre-2.x F5OS).
+# Taken directly from the proven create_f5_os_tenant role.
+# ------------------------------------------------------------------
+
+- name: Set management VLAN on tenant (Velos only)
+  ansible.builtin.uri:
+    url: >
+      https://{{ ansible_host }}:{{ ansible_httpapi_port | default(443) }}/restconf/data/f5-tenants:tenants/tenant={{
+      f5os_tenant_name }}/config/f5-tenant-mgmt-vlan:mgmt-vlan
+    method: PUT
+    status_code: [200, 201, 202, 204]
+    timeout: 300
+    body_format: json
+    headers:
+      Content-Type: "application/yang-data+json"
+    body:
+      f5-tenant-mgmt-vlan:mgmt-vlan: "{{ f5_mgmt_vlan }}"
+    force_basic_auth: true
+    user: "{{ ansible_user }}"
+    password: "{{ ansible_password }}"
+    validate_certs: false
+  when:
+    - f5_mgmt_vlan is defined
+    - destination_platform | lower == "velos"
+  delegate_to: localhost
+
+- name: Report tenant deployed (configured state) for {{ node_name }}
+  ansible.builtin.debug:
+    msg: "Tenant '{{ f5os_tenant_name }}' deployed in configured state on {{ inventory_hostname }} (mgmt: {{ hostvars[node_name].f5_mgmt_ip }})"

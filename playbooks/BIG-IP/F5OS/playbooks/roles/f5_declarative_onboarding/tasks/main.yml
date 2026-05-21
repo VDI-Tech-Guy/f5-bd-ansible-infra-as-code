@@ -1,0 +1,54 @@
+---
+# Role: f5_declarative_onboarding
+# Renders DO declaration from template and POSTs to BIG-IP tenant REST API.
+# Polls task status until complete or error.
+# Primary node must be onboarded before secondary — device trust requires it.
+# Direct port from the OpenShift and VMware implementations.
+
+- name: Render DO declaration for {{ node_name }}
+  ansible.builtin.set_fact:
+    do_declaration: "{{ lookup('template', 'do_declaration.j2') }}"
+
+- name: POST Declarative Onboarding declaration to {{ node_name }}
+  ansible.builtin.uri:
+    url: "https://{{ hostvars[node_name].f5_mgmt_ip }}/mgmt/shared/declarative-onboarding"
+    method: POST
+    user: admin
+    password: "{{ f5_admin_password }}"
+    validate_certs: false
+    body_format: json
+    body: "{{ do_declaration }}"
+    status_code: [200, 202]
+    headers:
+      Content-Type: "application/json"
+  register: do_post
+  delegate_to: localhost
+  no_log: true
+
+- name: Set DO task ID for {{ node_name }}
+  ansible.builtin.set_fact:
+    do_task_id: "{{ do_post.json.id }}"
+
+- name: Poll DO task until complete on {{ node_name }}
+  ansible.builtin.uri:
+    url: "https://{{ hostvars[node_name].f5_mgmt_ip }}/mgmt/shared/declarative-onboarding/task/{{ do_task_id }}"
+    method: GET
+    user: admin
+    password: "{{ f5_admin_password }}"
+    validate_certs: false
+    status_code: [200]
+  register: do_poll
+  until: do_poll.json.result.status | default('') in ['OK', 'ERROR']
+  retries: "{{ do_poll_retries }}"
+  delay: "{{ do_poll_interval }}"
+  delegate_to: localhost
+  no_log: true
+
+- name: Fail if DO returned an error on {{ node_name }}
+  ansible.builtin.fail:
+    msg: "DO failed on {{ node_name }}: {{ do_poll.json.result.message | default('unknown error') }}"
+  when: do_poll.json.result.status == 'ERROR'
+
+- name: DO onboarding complete for {{ node_name }}
+  ansible.builtin.debug:
+    msg: "{{ node_name }} onboarded successfully: {{ do_poll.json.result.message | default('OK') }}"

@@ -1,0 +1,18 @@
+---
+# playbooks/00_f5os_prereqs.yml
+# Connects to each F5OS partition and verifies that the requested tenant
+# image is present on the device. Sets computed memory default if
+# tenant_memory is not explicitly overridden. Fails fast with a clear
+# message if the image is missing so the operator knows to upload it
+# before proceeding.
+#
+# Image uploads are NOT automated here — F5OS tenant images come from
+# URLs (F5 downloads) or must already be present on the device.
+# Use the F5OS GUI / API / a separate image management job for that step.
+
+- name: Phase 0 — F5OS prerequisites
+  hosts: f5os_partitions
+  connection: httpapi
+  gather_facts: false
+  roles:
+    - role: f5os_prereqs

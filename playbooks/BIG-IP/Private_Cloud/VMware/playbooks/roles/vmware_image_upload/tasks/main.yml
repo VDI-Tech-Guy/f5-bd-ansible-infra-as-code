@@ -1,0 +1,201 @@
+---
+# Role: vmware_image_upload
+# Mounts CIFS share on bastion, deploys F5 OVA to vCenter as a template VM,
+# shuts the VM down, clears old snapshots, and creates the linked-clone snapshot.
+# Idempotent — checks for template existence before deploying OVA.
+# The CIFS share is unmounted in the always block whether OVA deploy succeeds or fails.
+
+- name: Set template VM name fact
+  ansible.builtin.set_fact:
+    f5_template_name: "{{ vm_name_prefix }}{{ ova_template_suffix }}-TMPL"
+
+# ------------------------------------------------------------------
+# Check if template already exists
+# ------------------------------------------------------------------
+
+- name: Check if template VM already exists
+  community.vmware.vmware_guest_info:
+    hostname: "{{ lookup('env','VMWARE_HOST') | default(vcenter_hostname) }}"
+    username: "{{ lookup('env','VMWARE_USER') | default(vcenter_username) }}"
+    password: "{{ lookup('env','VMWARE_PASSWORD') | default(vcenter_password) }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    datacenter: "{{ datacenter_name }}"
+    name: "{{ f5_template_name }}"
+  register: template_check
+  failed_when: false
+
+- name: Set template exists fact
+  ansible.builtin.set_fact:
+    template_exists: "{{ template_check.instance is defined }}"
+
+- name: Report template status
+  ansible.builtin.debug:
+    msg: "{{ 'Template ' + f5_template_name + ' already exists — skipping OVA deploy' if template_exists else 'Template not found — will deploy OVA from CIFS' }}"
+
+# ------------------------------------------------------------------
+# OVA deploy block — skipped if template already exists
+# ------------------------------------------------------------------
+
+- name: OVA deploy block
+  when: not template_exists
+  block:
+
+    - name: Ensure cifs-utils is installed on bastion
+      ansible.builtin.package:
+        name: cifs-utils
+        state: present
+      become: true
+      delegate_to: bastion01
+
+    - name: Create CIFS mount point on bastion
+      ansible.builtin.file:
+        path: "{{ cifs_mountpoint }}"
+        state: directory
+        mode: '0755'
+      become: true
+      delegate_to: bastion01
+
+    - name: Mount CIFS share on bastion
+      ansible.posix.mount:
+        src: "{{ cifs_share }}"
+        path: "{{ cifs_mountpoint }}"
+        fstype: cifs
+        opts: "username={{ cifs_username }},password={{ cifs_password }},domain={{ cifs_domain }},uid=0,gid=0,file_mode=0644,dir_mode=0755"
+        state: mounted
+      become: true
+      delegate_to: bastion01
+
+    - name: Verify OVA exists on share
+      ansible.builtin.stat:
+        path: "{{ cifs_mountpoint }}/{{ ova_filename }}"
+      register: ova_stat
+      delegate_to: bastion01
+      failed_when: not ova_stat.stat.exists
+
+    - name: Cache DO RPM on bastion from CIFS
+      ansible.builtin.copy:
+        src: "{{ cifs_mountpoint }}/{{ do_filename }}"
+        dest: "{{ bastion_f5_cache }}/{{ do_filename }}"
+        remote_src: true
+        mode: '0644'
+      become: true
+      delegate_to: bastion01
+      when: do_rpm_install_from_cifs | default(false) | bool
+
+    # Deploy OVA — runs on localhost; OVA path is on the bastion.
+    # community.vmware.vmware_deploy_ovf reads the OVA from the Ansible
+    # control node (or EE).  We therefore copy it locally first if needed,
+    # or mount the CIFS on the EE instead of the bastion.
+    # For simplicity the OVA is first fetched to the bastion then rsync'd
+    # to /tmp on localhost (EE) so vmware_deploy_ovf can read it.
+
+    - name: Create local tmp cache directory
+      ansible.builtin.file:
+        path: "/tmp/f5_ova_cache"
+        state: directory
+        mode: '0755'
+      delegate_to: localhost
+
+    - name: Fetch OVA from bastion CIFS share to EE /tmp
+      ansible.builtin.fetch:
+        src: "{{ cifs_mountpoint }}/{{ ova_filename }}"
+        dest: "/tmp/f5_ova_cache/{{ ova_filename }}"
+        flat: true
+      delegate_to: bastion01
+
+    - name: Deploy F5 OVA to vCenter
+      community.vmware.vmware_deploy_ovf:
+        hostname: "{{ lookup('env','VMWARE_HOST') | default(vcenter_hostname) }}"
+        username: "{{ lookup('env','VMWARE_USER') | default(vcenter_username) }}"
+        password: "{{ lookup('env','VMWARE_PASSWORD') | default(vcenter_password) }}"
+        validate_certs: "{{ vcenter_validate_certs }}"
+        datacenter: "{{ datacenter_name }}"
+        cluster: "{{ cluster_name }}"
+        datastore: "{{ datastore }}"
+        resource_pool: "{{ resource_pool_name }}"
+        name: "{{ f5_template_name }}"
+        networks:
+          Management: "{{ vsphere_mgmt_network }}"
+          Internal: "{{ vsphere_internal_network }}"
+          External: "{{ vsphere_external_network }}"
+          HA: "{{ vsphere_ha_network }}"
+        power_on: false
+        ovf: "/tmp/f5_ova_cache/{{ ova_filename }}"
+        deployment_option: "{{ ova_deployment_option }}"
+        wait_for_ip_address: false
+      delegate_to: localhost
+
+    - name: Clean up OVA from EE tmp cache
+      ansible.builtin.file:
+        path: "/tmp/f5_ova_cache/{{ ova_filename }}"
+        state: absent
+      delegate_to: localhost
+
+  always:
+    - name: Unmount CIFS share on bastion
+      ansible.posix.mount:
+        path: "{{ cifs_mountpoint }}"
+        state: unmounted
+      become: true
+      delegate_to: bastion01
+      when: not template_exists
+
+# ------------------------------------------------------------------
+# Snapshot management — runs whether or not OVA was just deployed.
+# Ensures a clean snapshot exists for linked clones.
+# ------------------------------------------------------------------
+
+- name: Power off template VM before snapshotting (if running)
+  community.vmware.vmware_guest_powerstate:
+    hostname: "{{ lookup('env','VMWARE_HOST') | default(vcenter_hostname) }}"
+    username: "{{ lookup('env','VMWARE_USER') | default(vcenter_username) }}"
+    password: "{{ lookup('env','VMWARE_PASSWORD') | default(vcenter_password) }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    name: "{{ f5_template_name }}"
+    state: shutdown-guest
+    state_change_timeout: 300
+  delegate_to: localhost
+  failed_when: false   # tolerate if already powered off
+
+- name: Wait for template VM to power off
+  community.vmware.vmware_guest_info:
+    hostname: "{{ lookup('env','VMWARE_HOST') | default(vcenter_hostname) }}"
+    username: "{{ lookup('env','VMWARE_USER') | default(vcenter_username) }}"
+    password: "{{ lookup('env','VMWARE_PASSWORD') | default(vcenter_password) }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    datacenter: "{{ datacenter_name }}"
+    name: "{{ f5_template_name }}"
+  register: tmpl_power_check
+  until: tmpl_power_check.instance.hw_power_status | default('') == 'poweredOff'
+  retries: 20
+  delay: 15
+  delegate_to: localhost
+
+- name: Remove all existing snapshots from template VM
+  community.vmware.vmware_guest_snapshot:
+    hostname: "{{ lookup('env','VMWARE_HOST') | default(vcenter_hostname) }}"
+    username: "{{ lookup('env','VMWARE_USER') | default(vcenter_username) }}"
+    password: "{{ lookup('env','VMWARE_PASSWORD') | default(vcenter_password) }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    datacenter: "{{ datacenter_name }}"
+    name: "{{ f5_template_name }}"
+    state: remove_all
+  delegate_to: localhost
+  ignore_errors: true
+
+- name: Create linked-clone snapshot on template VM
+  community.vmware.vmware_guest_snapshot:
+    hostname: "{{ lookup('env','VMWARE_HOST') | default(vcenter_hostname) }}"
+    username: "{{ lookup('env','VMWARE_USER') | default(vcenter_username) }}"
+    password: "{{ lookup('env','VMWARE_PASSWORD') | default(vcenter_password) }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    datacenter: "{{ datacenter_name }}"
+    name: "{{ f5_template_name }}"
+    state: present
+    snapshot_name: "{{ f5_snapshot_name }}"
+    description: "{{ f5_snapshot_desc }}"
+  delegate_to: localhost
+
+- name: Report template ready
+  ansible.builtin.debug:
+    msg: "Template '{{ f5_template_name }}' is ready for linked-clone deployment (snapshot: {{ f5_snapshot_name }})"

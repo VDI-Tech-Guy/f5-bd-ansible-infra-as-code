@@ -1,0 +1,10 @@
+---
+# playbooks/00_vmware_prereqs.yml
+# Creates the vSphere resource pool that will contain both BIG-IP VMs.
+# Idempotent — vmware_resource_pool state: present is a no-op if it already exists.
+
+- name: Phase 0 — VMware prerequisites
+  hosts: localhost
+  gather_facts: false
+  roles:
+    - role: vmware_prereqs

@@ -1,0 +1,216 @@
+---
+# ============================================================
+# Platform
+# ============================================================
+# Identifies whether the target is rSeries or Velos.
+# This controls the mgmt-vlan step — that API endpoint exists
+# only on Velos (partition layer); rSeries manages mgmt VLAN
+# differently and this step is skipped automatically.
+#
+# Valid values:  rSeries  |  Velos
+destination_platform: rSeries
+
+# ============================================================
+# F5OS credentials
+# ============================================================
+# ansible_user and ansible_password are NOT set here.
+# AAP injects them at runtime via the "F5 BIG-IP" credential type
+# as environment variables which map to:
+#   ansible_user:     "{{ lookup('env', 'ANSIBLE_NET_USERNAME') }}"
+#   ansible_password: "{{ lookup('env', 'ANSIBLE_NET_PASSWORD') }}"
+#
+# These are referenced in group_vars by the f5os_partitions group.
+
+# ============================================================
+# Tenant image
+# ============================================================
+# The BIG-IP tenant image must already be present on the F5OS
+# device before this playbook runs (uploaded via the F5OS GUI,
+# API, or a separate image management job).
+# Specify the build string that uniquely identifies the image —
+# the f5os_tenant_deploy role matches this against the
+# tenant-images list returned by f5os_device_info.
+tenant_image_version: "17.5.1-0.0.6"
+
+# ============================================================
+# Tenant compute resources
+# ============================================================
+# Defaults match the proven modernization repo values.
+# Override any of these in AAP extra_vars / Survey as needed.
+tenant_cpu_cores: 4
+tenant_disk_size: 120        # GB
+# Memory defaults to F5's recommended formula: (3.5 * 1024 * cpu) + 512
+# Override by setting tenant_memory explicitly (MB).
+# tenant_memory: 14848
+tenant_cryptos: enabled
+# Slot / blade number(s) the tenant runs on.
+# rSeries: always [1]
+# Velos:   blade number(s) in the chassis, e.g. [1] or [1, 2]
+tenant_nodes: [1]
+
+# ============================================================
+# Tenant management network
+# ============================================================
+# Per-node mgmt IPs come from inventory hostvars (f5_mgmt_ip).
+# Prefix and gateway are shared across both nodes.
+f5_mgmt_prefix: 24
+f5_mgmt_gateway: "10.30.14.1"
+
+# mgmt_vlan — Velos only, ignored on rSeries.
+# Set to the VLAN ID used for out-of-band management on the partition.
+# Leave commented out if not needed.
+# f5_mgmt_vlan: 3014
+
+# ============================================================
+# F5OS VLANs
+# ============================================================
+# These VLANs are created at the F5OS partition layer and then
+# assigned to the tenant. The list drives both f5os_vlans role
+# (create VLANs on the partition) and f5os_tenant_deploy role
+# (pass vlan IDs to f5os_tenant).
+#
+# name:    human-readable label (used as the F5OS VLAN name prefix)
+# vlan_id: 802.1q VLAN tag
+# bigip_iface: BIG-IP interface the VLAN maps to inside the tenant
+#              (used by the DO declaration for VLAN/SelfIP config)
+f5_networks:
+  - name: internal
+    vlan_id: 3010
+    bigip_iface: "1.1"
+  - name: external
+    vlan_id: 3011
+    bigip_iface: "1.2"
+  - name: ha
+    vlan_id: 3012
+    bigip_iface: "1.3"
+
+# Floating (shared) self IPs — traffic-group-1, active/standby failover
+f5_float_internal: "10.30.10.10/24"
+f5_float_external: "10.30.11.10/24"
+
+# Default route gateway (typically on the external network)
+f5_route_gateway: "10.30.11.1"
+
+# ============================================================
+# DNS / NTP / Timezone
+# ============================================================
+f5_dns_servers:
+  - "192.168.10.10"
+  - "192.168.10.11"
+f5_dns_search:
+  - "yourdomain.local"
+f5_ntp_servers:
+  - "192.168.10.20"
+  - "pool.ntp.org"
+f5_timezone: "America/New_York"
+
+# ============================================================
+# F5 module provisioning
+# ============================================================
+f5_modules:
+  - ltm
+  - apm
+
+# ============================================================
+# BIG-IP tenant credentials
+# ============================================================
+f5_admin_password: "{{ lookup('env', 'ANSIBLE_NET_PASSWORD') }}"
+f5_root_password:  "{{ lookup('env', 'ANSIBLE_NET_PASSWORD') }}"
+
+# ============================================================
+# F5 licensing  (f5_license_type: regkey  or  bigiq)
+# ============================================================
+f5_license_type: regkey
+
+# regKey — one key per node
+f5_license_key_node1: "XXXXX-XXXXX-XXXXX-XXXXX-XXXXXXX"
+f5_license_key_node2: "XXXXX-XXXXX-XXXXX-XXXXX-XXXXXXX"
+
+# BIG-IQ pool licensing (used when f5_license_type: bigiq)
+bigiq_host: "192.168.1.100"
+bigiq_username: "{{ vault_bigiq_username }}"
+bigiq_password: "{{ vault_bigiq_password }}"
+bigiq_pool: "bigiq_pool_name"
+
+# ============================================================
+# Interface VLAN assignments (optional)
+# ============================================================
+# Set f5os_interface_vlan_enabled: true to associate VLANs to
+# physical interfaces or LAGs on each F5OS partition.
+# Leave false (default) when interfaces are already configured
+# or you want to manage them separately.
+#
+# type: interface  → physical port  (f5os_interface module)
+# type: lag        → LAG/trunk      (f5os_lag module)
+#
+# Interface name format:
+#   rSeries:         "1.0"   "2.0"   (port only)
+#   Velos partition: "1/1.0" "1/2.0" (blade/port)
+#
+# trunk_vlans: tagged VLANs (list of VLAN IDs)
+# native_vlan: untagged VLAN (single ID, optional)
+#
+# NOTE: if using LAGs, assign VLANs to the LAG entry only —
+# do not also assign them to the member interfaces.
+
+f5os_interface_vlan_enabled: false
+
+# Example — rSeries, all VLANs on a single interface:
+# f5os_interface_assignments:
+#   - name: "1.0"
+#     type: interface
+#     trunk_vlans: [3010, 3011, 3012]
+
+# Example — rSeries, separate interface per network:
+# f5os_interface_assignments:
+#   - name: "1.0"
+#     type: interface
+#     trunk_vlans: [3010]        # internal
+#   - name: "2.0"
+#     type: interface
+#     trunk_vlans: [3011]        # external
+#   - name: "3.0"
+#     type: interface
+#     trunk_vlans: [3012]        # ha
+
+# Example — Velos partition (blade/port format):
+# f5os_interface_assignments:
+#   - name: "1/1.0"
+#     type: interface
+#     trunk_vlans: [3010, 3011, 3012]
+
+# Example — LAG (both platforms):
+# f5os_interface_assignments:
+#   - name: "Uplink-LAG"
+#     type: lag
+#     trunk_vlans: [3010, 3011, 3012]
+
+# ============================================================
+# Teardown behaviour
+# ============================================================
+# VLANs are NEVER deleted during teardown — they are shared partition-level
+# objects. Other tenants on the same F5OS partition may use the same VLANs.
+# Only the BIG-IP tenant itself is removed by teardown.yml.
+
+# ============================================================
+# Declarative Onboarding (optional — see 03_onboard.yml)
+# ============================================================
+# Set do_onboard_enabled: false to skip onboarding entirely.
+# This is the safety flag for environments where interfaces are
+# not yet mapped to VLANs — running DO without interface
+# assignments will fail on the SelfIP / VLAN steps.
+do_onboard_enabled: true
+
+do_rpm_install_from_cifs: false  # true only if DO RPM is NOT baked into the tenant image
+do_filename: "f5-declarative-onboarding-1.48.0-3.noarch.rpm"
+bastion_f5_cache: "/opt/f5/cache"
+
+do_poll_interval: 30
+do_poll_retries: 40
+
+# ============================================================
+# HA
+# ============================================================
+f5_ha_enabled: true
+f5_primary_node: "bigip-01"
+f5_secondary_node: "bigip-02"

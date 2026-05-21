@@ -1,0 +1,21 @@
+---
+# site.yml — master playbook
+# Runs all phases in order.
+# In AAP, create a Job Template pointing at this playbook.
+# Individual playbooks can also be run standalone for re-runs / debugging.
+#
+# Phase 3 (onboarding) is gated by do_onboard_enabled (default: true).
+# Set do_onboard_enabled: false in extra_vars to skip it — useful when
+# interface-to-VLAN assignments are not yet in place on the F5OS device.
+
+- name: Phase 0 — F5OS prerequisites (verify image, compute defaults)
+  ansible.builtin.import_playbook: 00_f5os_prereqs.yml
+
+- name: Phase 1 — Create VLANs on F5OS partitions / assign to interfaces (optional)
+  ansible.builtin.import_playbook: 01_f5os_vlans.yml
+
+- name: Phase 2 — Deploy and start BIG-IP tenants
+  ansible.builtin.import_playbook: 02_tenant_deploy.yml
+
+- name: Phase 3 — Declarative Onboarding (optional)
+  ansible.builtin.import_playbook: 03_onboard.yml

@@ -1,0 +1,117 @@
+---
+# Role: f5os_interface_vlans
+# Associates VLANs to physical interfaces or LAGs on the F5OS partition.
+# This is the step that makes the tenant's VLANs reachable on the wire.
+#
+# Entirely optional — controlled by f5os_interface_vlan_enabled (default false).
+# Skip this role when:
+#   - Interface-to-VLAN wiring is already configured on the partition
+#   - Interfaces will be configured manually or by a separate job
+#   - Using this playbook in a lab where physical interfaces don't matter
+#
+# Interface naming format differs between platforms:
+#   rSeries:         "1.0"  "2.0"  "3.0"   (port only)
+#   Velos partition: "1/1.0" "1/2.0" "2/1.0" (blade/port)
+#
+# Each entry in f5os_interface_assignments drives one task:
+#   - type: interface  → uses f5os_interface module (physical port)
+#   - type: lag        → uses f5os_lag module (link aggregation group)
+#
+# VLANs referenced in trunk_vlans must already exist on the partition
+# (created by f5os_vlans role or pre-existing). This role does not
+# create VLANs — it only associates them to interfaces/LAGs.
+#
+# Example f5os_interface_assignments entries (set in extra_vars):
+#
+#   rSeries — single interface per VLAN group:
+#     f5os_interface_assignments:
+#       - name: "1.0"
+#         type: interface
+#         trunk_vlans: [3010, 3011, 3012]
+#
+#   Velos — blade/port format, one interface per VLAN:
+#     f5os_interface_assignments:
+#       - name: "1/1.0"
+#         type: interface
+#         trunk_vlans: [3010, 3011, 3012]
+#
+#   LAG (both platforms):
+#     f5os_interface_assignments:
+#       - name: "HA-LAG"
+#         type: lag
+#         trunk_vlans: [3010, 3011, 3012]
+#
+#   Mixed — separate interfaces per network (common on rSeries):
+#     f5os_interface_assignments:
+#       - name: "1.0"
+#         type: interface
+#         trunk_vlans: [3010]       # internal
+#       - name: "2.0"
+#         type: interface
+#         trunk_vlans: [3011]       # external
+#       - name: "3.0"
+#         type: interface
+#         trunk_vlans: [3012]       # ha
+#
+#   Native VLAN (untagged traffic):
+#     f5os_interface_assignments:
+#       - name: "1.0"
+#         type: interface
+#         trunk_vlans: [3010, 3011]
+#         native_vlan: 3012
+
+- name: Skip interface VLAN assignment — f5os_interface_vlan_enabled is false
+  ansible.builtin.debug:
+    msg: >
+      f5os_interface_vlan_enabled=false — skipping interface VLAN assignments
+      on {{ inventory_hostname }}. Set f5os_interface_vlan_enabled: true and
+      define f5os_interface_assignments in extra_vars to enable this step.
+  when: not (f5os_interface_vlan_enabled | default(false) | bool)
+
+- name: Interface VLAN assignment block
+  when: f5os_interface_vlan_enabled | default(false) | bool
+  block:
+
+    - name: Fail if f5os_interface_assignments is not defined
+      ansible.builtin.fail:
+        msg: >
+          f5os_interface_vlan_enabled is true but f5os_interface_assignments
+          is not defined. Add f5os_interface_assignments to your extra_vars.
+          See the role comments or ReadMe for example configurations.
+      when: f5os_interface_assignments is not defined or f5os_interface_assignments | length == 0
+
+    # ------------------------------------------------------------------
+    # Physical interface assignments
+    # ------------------------------------------------------------------
+
+    - name: Assign VLANs to physical interfaces on {{ inventory_hostname }}
+      f5networks.f5os.f5os_interface:
+        name: "{{ item.name }}"
+        trunk_vlans: "{{ item.trunk_vlans | default(omit) }}"
+        native_vlan: "{{ item.native_vlan | default(omit) }}"
+        state: present
+      loop: "{{ f5os_interface_assignments | selectattr('type', 'equalto', 'interface') | list }}"
+      loop_control:
+        label: "interface {{ item.name }} → trunk_vlans={{ item.trunk_vlans | default([]) }}{% if item.native_vlan is defined %} native={{ item.native_vlan }}{% endif %}"
+
+    # ------------------------------------------------------------------
+    # LAG assignments
+    # VLANs go on the LAG object, not on the member interfaces.
+    # ------------------------------------------------------------------
+
+    - name: Assign VLANs to LAG interfaces on {{ inventory_hostname }}
+      f5networks.f5os.f5os_lag:
+        name: "{{ item.name }}"
+        trunk_vlans: "{{ item.trunk_vlans | default(omit) }}"
+        native_vlan: "{{ item.native_vlan | default(omit) }}"
+        state: present
+      loop: "{{ f5os_interface_assignments | selectattr('type', 'equalto', 'lag') | list }}"
+      loop_control:
+        label: "LAG {{ item.name }} → trunk_vlans={{ item.trunk_vlans | default([]) }}{% if item.native_vlan is defined %} native={{ item.native_vlan }}{% endif %}"
+
+    - name: Report interface VLAN assignments complete on {{ inventory_hostname }}
+      ansible.builtin.debug:
+        msg:
+          - "Interface VLAN assignments applied on {{ inventory_hostname }}"
+          - "Physical interfaces: {{ f5os_interface_assignments | selectattr('type', 'equalto', 'interface') | map(attribute='name') | list }}"
+          - "LAGs:                {{ f5os_interface_assignments | selectattr('type', 'equalto', 'lag') | map(attribute='name') | list }}"
